@@ -1,0 +1,34 @@
+# Tech Stack
+Next.js 14+ (App Router), TypeScript (strict), Tailwind, Supabase, Mollie
+
+# Critical Conventions
+- Server Components by default; add 'use client' only when required
+- Supabase clients:
+  - Server: createServerClient with cookie-based sessions (@supabase/ssr)
+  - Browser: createBrowserClient only for RLS-safe reads/writes
+- Middleware refreshes Supabase session cookies (SSR pattern)
+- Never expose service_role key client-side
+- Enable RLS on ALL tables; enforce authorization in policies, not app-level checks
+- Named exports preferred EXCEPT where Next.js requires default exports (page/layout/loading/error)
+- Structure: /app (routes), /components (UI), /lib (utils), /types, /hooks
+
+# Supabase Auth
+- Protected operations must be server-side (Route Handlers / Server Actions)
+- Auth/session source of truth is httpOnly cookies (no localStorage-as-truth patterns)
+
+# Mollie Payments
+- Verify webhook authenticity (signature or token mechanism supported by Mollie)
+- Store mollie_customer_id and mollie_subscription_id in DB
+- Use Mollie test mode during development
+- Webhooks must be idempotent:
+  - On webhook, fetch the Mollie resource (payment/subscription) via API
+  - Apply state transitions (paid/active/cancelled/etc) based on fetched status
+
+# Security
+- Validate input server-side (use Zod)
+- Return 401 when unauthenticated; 403 when authenticated but not authorized
+- Secrets via env vars; NEXT_PUBLIC_* only for truly public values
+
+# Styling
+- Tailwind only (no CSS modules / inline styles)
+- Use cn() for conditional classes
