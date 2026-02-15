@@ -1,36 +1,134 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Summit
+
+**Automate your freelance invoicing for fixed-bid projects**
+
+Summit helps freelancers and small studios automate milestone-based billing for fixed-price projects. Track clients, set up project milestones, and automatically generate invoices when work is completed.
+
+## Features
+
+### Core Capabilities
+- 🎯 **Client & Project Management** - Track clients and fixed-bid projects
+- 📊 **Milestone Tracking** - Define project milestones with payment schedules
+- 📄 **Automated Invoice Generation** - Generate invoices when milestones are completed
+- 💳 **Payment Processing** - Mollie integration with webhook automation
+- 👥 **Multi-user Workspaces** - Team collaboration with role-based access
+- 🔒 **Workspace Isolation** - Complete data separation between workspaces
+
+### Coming Soon
+- Session pack agreements (hourly/block time billing)
+- Retainer agreements with recurring billing
+
+### Tech Stack
+- **Framework**: Next.js 14+ (App Router)
+- **Language**: TypeScript (strict mode)
+- **Styling**: Tailwind CSS + shadcn/ui (installed on-demand)
+- **Database**: Supabase (PostgreSQL)
+- **Auth**: Supabase Auth with RLS
+- **Payments**: Mollie
+- **Deployment**: Vercel
 
 ## Getting Started
 
-First, run the development server:
+### Prerequisites
+- Node.js 18+
+- npm or yarn
+- Supabase account
+- Mollie account (for payments)
 
+### Installation
+
+1. Clone the repository:
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+   git clone https://github.com/mbbraamhaar/summit.git
+   cd summit
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+2. Install dependencies:
+```bash
+   npm install
+```
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+3. Copy `.env.example` to `.env.local` and fill in your values:
+```bash
+   cp .env.example .env.local
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+4. Run the development server:
+```bash
+   npm run dev
+```
 
-## Learn More
+5. Open [http://localhost:3000](http://localhost:3000)
 
-To learn more about Next.js, take a look at the following resources:
+## Project Structure
+```
+/app          # Next.js app router pages and API routes
+/components   # Reusable React components
+  /ui         # shadcn/ui components (installed on-demand)
+  /auth       # Authentication components
+  /billing    # Subscription/billing components
+  /summit     # Custom Summit domain components (timelines, schedules, etc)
+  /layout     # Layout components (nav, sidebar)
+/lib          # Utilities, configurations, and business logic
+  /supabase   # Supabase client configuration
+  /mollie     # Mollie client configuration
+  /auth       # Authentication helpers
+  /subscriptions # Subscription management
+/types        # TypeScript type definitions
+/hooks        # Custom React hooks
+/public       # Static assets
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Architecture Overview
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+### Multi-tenancy Model
+Summit uses a **workspace-based multi-tenancy model**:
+- Each workspace is an isolated tenant
+- All data queries require and enforce `workspace_id`
+- RLS policies ensure complete data isolation
+- Users can belong to multiple workspaces with different roles
 
-## Deploy on Vercel
+### Authorization Model
+Two role types:
+- **Owner**: Full permissions including billing, member management, workspace settings
+- **Member**: Can manage clients, projects, and invoices within workspace
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+### Security
+- Row-level security (RLS) on all tables
+- Workspace isolation enforced at database level
+- Rate limiting on authentication and public endpoints
+- Audit logging for critical operations
+- Secure credential storage via environment variables
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Development
+
+### Branch Strategy
+- `main` - Production-ready code
+- `develop` - Integration branch
+- `feature/*` - Feature branches off develop
+
+### Workflow
+1. Create feature branch from `develop`
+2. Implement feature following Sprint 0 conventions
+3. Create PR to merge into `develop`
+4. After testing, merge `develop` → `main`
+
+### Installing shadcn/ui Components
+Components are installed on-demand as needed:
+```bash
+npx shadcn@latest add [component-name]
+```
+
+## Documentation
+
+- [Sprint 0: Technical Foundation](./docs/sprint-0-technical-foundation.md)
+- [Feature Specification](./docs/summit-features-specification.md)
+- Database Schema (coming soon)
+- API Documentation (coming soon)
+
+## License
+
+Copyright © 2026 Around Us BV. All rights reserved.
+
+This software is proprietary and confidential. Unauthorized copying, distribution, 
+or use of this software is strictly prohibited.

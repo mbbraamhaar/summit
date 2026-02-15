@@ -1,0 +1,46 @@
+{
+    // Editor formatting
+    "editor.formatOnSave": true,
+    "editor.defaultFormatter": "esbenp.prettier-vscode",
+    "editor.codeActionsOnSave": {
+      "source.fixAll.eslint": "explicit"
+    },
+  
+    // TypeScript settings
+    "typescript.tsdk": "node_modules/typescript/lib",
+    "typescript.enablePromptUseWorkspaceTsdk": true,
+  
+    // Tailwind CSS
+    "tailwindCSS.experimental.classRegex": [
+      ["cva\\(([^)]*)\\)", "[\"'`]([^\"'`]*).*?[\"'`]"],
+      ["cn\\(([^)]*)\\)", "(?:'|\"|`)([^']*)(?:'|\"|`)"]
+    ],
+    "editor.quickSuggestions": {
+      "strings": true
+    },
+  
+    // File associations
+    "files.associations": {
+      "*.css": "tailwindcss"
+    },
+  
+    // Auto-save
+    "files.autoSave": "onFocusChange",
+  
+    // Prettier config
+    "[javascript]": {
+      "editor.defaultFormatter": "esbenp.prettier-vscode"
+    },
+    "[typescript]": {
+      "editor.defaultFormatter": "esbenp.prettier-vscode"
+    },
+    "[typescriptreact]": {
+      "editor.defaultFormatter": "esbenp.prettier-vscode"
+    },
+    "[json]": {
+      "editor.defaultFormatter": "esbenp.prettier-vscode"
+    },
+  
+    // Cursor AI specific
+    "cursor.general.enableCursorComposer": true
+  }
