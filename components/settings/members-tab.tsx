@@ -7,8 +7,9 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Input } from '@/components/ui/input'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { toast } from 'sonner'
-import { createInvitation, revokeInvitation } from '@/app/(app)/settings/actions'
+import { createInvitation, removeMember, revokeInvitation } from '@/app/(app)/settings/actions'
 
 type Profile = Tables<'profiles'>
 type Invitation = Pick<Tables<'invitations'>, 'id' | 'email' | 'status' | 'expires_at' | 'created_at'>
@@ -45,6 +46,8 @@ export function MembersTab({
   const [inviteEmail, setInviteEmail] = useState('')
   const [isInviting, setIsInviting] = useState(false)
   const [revokingId, setRevokingId] = useState<string | null>(null)
+  const [memberToRemove, setMemberToRemove] = useState<Profile | null>(null)
+  const [isRemovingMember, setIsRemovingMember] = useState(false)
 
   async function handleInvite() {
     if (!isOwner) return
@@ -84,6 +87,27 @@ export function MembersTab({
     }
 
     toast.success('Invitation revoked')
+  }
+
+  async function handleConfirmRemove() {
+    if (!memberToRemove || !isOwner) return
+
+    setIsRemovingMember(true)
+    const formData = new FormData()
+    formData.append('memberId', memberToRemove.id)
+
+    const result = await removeMember(formData)
+    setIsRemovingMember(false)
+
+    if (!result.success) {
+      toast.error('Failed to remove member', {
+        description: result.error || 'Please try again.',
+      })
+      return
+    }
+
+    toast.success('Member removed')
+    setMemberToRemove(null)
   }
   
   return (
@@ -203,11 +227,11 @@ export function MembersTab({
                           {member.role}
                         </Badge>
                         
-                        {isOwner && !isCurrentUser && (
+                        {isOwner && !isCurrentUser && member.role !== 'owner' && (
                           <Button
                             variant="ghost"
                             size="sm"
-                            disabled
+                            onClick={() => setMemberToRemove(member)}
                           >
                             Remove
                           </Button>
@@ -232,6 +256,35 @@ export function MembersTab({
           </CardHeader>
         </Card>
       )}
+
+      <Dialog open={Boolean(memberToRemove)} onOpenChange={(open) => !open && setMemberToRemove(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Remove member?</DialogTitle>
+            <DialogDescription>
+              {memberToRemove
+                ? `Are you sure you want to remove ${memberToRemove.full_name || memberToRemove.email}?`
+                : 'Are you sure you want to remove this member?'}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setMemberToRemove(null)}
+              disabled={isRemovingMember}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleConfirmRemove}
+              disabled={isRemovingMember}
+            >
+              {isRemovingMember ? 'Removing...' : 'Remove member'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

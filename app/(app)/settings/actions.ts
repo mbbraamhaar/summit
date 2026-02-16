@@ -1,11 +1,12 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { createHash, randomBytes } from 'crypto'
 import { z } from 'zod'
-import { sendInvitationEmail } from '@/lib/email/invitations'
+import { sendInvitationEmail, sendMemberRemovedEmail } from '@/lib/email/invitations'
 
 const deleteCompanySchema = z.object({
   companyName: z.string().min(1, 'Company name is required'),
@@ -18,6 +19,70 @@ const createInvitationSchema = z.object({
 const revokeInvitationSchema = z.object({
   invitationId: z.string().uuid('Invalid invitation id'),
 })
+
+const removeMemberSchema = z.object({
+  memberId: z.string().uuid('Invalid member id'),
+})
+
+function buildAuthRouteWithRedirect({
+  appUrl,
+  authPath,
+  rawToken,
+  email,
+}: {
+  appUrl: string
+  authPath: '/auth/sign-in' | '/auth/sign-up'
+  rawToken: string
+  email: string
+}) {
+  const inviteAcceptPath = `/invite/accept?token=${encodeURIComponent(rawToken)}`
+  const inviteUrl = new URL(authPath, appUrl)
+  inviteUrl.searchParams.set('redirect', inviteAcceptPath)
+  inviteUrl.searchParams.set('email', email)
+  return inviteUrl.toString()
+}
+
+async function authUserExistsByEmail(email: string) {
+  const admin = createAdminClient()
+  const loweredEmail = email.toLowerCase()
+
+  const maybeGetUserByEmail = (
+    admin.auth.admin as unknown as {
+      getUserByEmail?: (targetEmail: string) => Promise<{ data: { user: { id: string } | null }; error: { message: string } | null }>
+    }
+  ).getUserByEmail
+
+  if (typeof maybeGetUserByEmail === 'function') {
+    const { data, error } = await maybeGetUserByEmail(loweredEmail)
+    if (error) {
+      throw new Error(error.message)
+    }
+    return Boolean(data.user)
+  }
+
+  let page = 1
+  const perPage = 200
+  const maxPages = 50
+
+  while (page <= maxPages) {
+    const { data, error } = await admin.auth.admin.listUsers({ page, perPage })
+    if (error) {
+      throw new Error(error.message)
+    }
+
+    if (data.users.some((candidate) => candidate.email?.toLowerCase() === loweredEmail)) {
+      return true
+    }
+
+    if (data.users.length < perPage) {
+      break
+    }
+
+    page += 1
+  }
+
+  return false
+}
 
 export async function updateCompany(formData: FormData) {
   const supabase = await createClient()
@@ -190,6 +255,31 @@ export async function createInvitation(formData: FormData) {
     return { success: false, error: 'This user is already a member of your company' }
   }
 
+  let hasAuthAccount = false
+
+  try {
+    hasAuthAccount = await authUserExistsByEmail(email)
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to process invitation',
+    }
+  }
+
+  const { error: revokePendingError } = await supabase
+    .from('invitations')
+    .update({
+      status: 'revoked',
+      revoked_at: new Date().toISOString(),
+    })
+    .eq('company_id', ownerProfile.company_id)
+    .eq('status', 'pending')
+    .eq('email', email)
+
+  if (revokePendingError) {
+    return { success: false, error: revokePendingError.message }
+  }
+
   const rawToken = randomBytes(32).toString('hex')
   const tokenHash = createHash('sha256').update(rawToken).digest('hex')
   const inviteExpiryHours = Number(process.env.INVITE_EXPIRY_HOURS || '168')
@@ -207,20 +297,24 @@ export async function createInvitation(formData: FormData) {
     })
 
   if (insertError) {
-    if (insertError.code === '23505') {
-      return { success: false, error: 'A pending invitation already exists for this email' }
-    }
     return { success: false, error: insertError.message }
   }
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
-  const inviteUrl = `${appUrl}/sign-up?invite=${rawToken}&email=${encodeURIComponent(email)}`
+
+  const inviteUrl = buildAuthRouteWithRedirect({
+    appUrl,
+    authPath: hasAuthAccount ? '/auth/sign-in' : '/auth/sign-up',
+    rawToken,
+    email,
+  })
 
   const emailResult = await sendInvitationEmail({
     toEmail: email,
     companyName: ownerProfile.company.name,
     inviteUrl,
     expiresAt,
+    variant: hasAuthAccount ? 'reactivated' : 'new-invite',
   })
 
   if (!emailResult.success) {
@@ -247,7 +341,11 @@ export async function revokeInvitation(formData: FormData) {
 
   const { data: ownerProfile } = await supabase
     .from('profiles')
-    .select('role, company_id')
+    .select(`
+      role,
+      company_id,
+      company:companies(name)
+    `)
     .eq('id', user.id)
     .single()
 
@@ -283,6 +381,88 @@ export async function revokeInvitation(formData: FormData) {
 
   if (!updatedInvitation) {
     return { success: false, error: 'Invitation not found or already processed' }
+  }
+
+  revalidatePath('/settings')
+  return { success: true }
+}
+
+export async function removeMember(formData: FormData) {
+  const supabase = await createClient()
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  if (!user) {
+    return { success: false, error: 'Unauthorized' }
+  }
+
+  const { data: ownerProfile } = await supabase
+    .from('profiles')
+    .select(`
+      role,
+      company_id,
+      company:companies(name)
+    `)
+    .eq('id', user.id)
+    .single()
+
+  if (!ownerProfile) {
+    return { success: false, error: 'Profile not found' }
+  }
+
+  if (ownerProfile.role !== 'owner') {
+    return { success: false, error: 'Only owners can remove members' }
+  }
+
+  const memberId = (formData.get('memberId') as string | null) ?? ''
+  const validation = removeMemberSchema.safeParse({ memberId })
+  if (!validation.success) {
+    return { success: false, error: validation.error.issues[0]?.message ?? 'Invalid member id' }
+  }
+
+  if (validation.data.memberId === user.id) {
+    return { success: false, error: 'You cannot remove yourself' }
+  }
+
+  const { data: memberToRemove, error: memberError } = await supabase
+    .from('profiles')
+    .select('id, role, email')
+    .eq('id', validation.data.memberId)
+    .eq('company_id', ownerProfile.company_id)
+    .maybeSingle()
+
+  if (memberError) {
+    return { success: false, error: memberError.message }
+  }
+
+  if (!memberToRemove) {
+    return { success: false, error: 'Member not found' }
+  }
+
+  if (memberToRemove.role === 'owner') {
+    return { success: false, error: 'Owners cannot be removed' }
+  }
+
+  const { error: deleteError } = await supabase
+    .from('profiles')
+    .delete()
+    .eq('id', validation.data.memberId)
+    .eq('company_id', ownerProfile.company_id)
+
+  if (deleteError) {
+    return { success: false, error: deleteError.message }
+  }
+
+  const companyName = ownerProfile.company?.name || 'your workspace'
+  const removalEmailResult = await sendMemberRemovedEmail({
+    toEmail: memberToRemove.email,
+    companyName,
+  })
+
+  if (!removalEmailResult.success) {
+    console.error('Failed to send member removal email:', removalEmailResult.error)
   }
 
   revalidatePath('/settings')

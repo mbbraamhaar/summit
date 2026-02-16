@@ -23,14 +23,14 @@ const signUpSchema = z.object({
 type SignUpFormData = z.infer<typeof signUpSchema>
 
 interface SignUpFormProps {
-  inviteToken?: string
+  redirectTo?: string
   inviteEmail?: string
 }
 
-export function SignUpForm({ inviteToken, inviteEmail }: SignUpFormProps) {
+export function SignUpForm({ redirectTo = '/dashboard', inviteEmail }: SignUpFormProps) {
   const router = useRouter()
   const [isLoading, setIsLoading] = useState(false)
-  const isInviteFlow = Boolean(inviteToken)
+  const isInviteFlow = redirectTo.startsWith('/invite/accept')
 
   const {
     register,
@@ -53,6 +53,8 @@ export function SignUpForm({ inviteToken, inviteEmail }: SignUpFormProps) {
 
     setIsLoading(true)
     const supabase = createClient()
+    const callbackUrl = new URL('/auth/callback', window.location.origin)
+    callbackUrl.searchParams.set('redirect', redirectTo)
 
     const { error } = await supabase.auth.signUp({
       email: data.email,
@@ -61,9 +63,8 @@ export function SignUpForm({ inviteToken, inviteEmail }: SignUpFormProps) {
         data: {
           full_name: data.fullName,
           company_name: isInviteFlow ? undefined : data.companyName,
-          invite_token: inviteToken,
         },
-        emailRedirectTo: `${window.location.origin}/auth/callback`,
+        emailRedirectTo: callbackUrl.toString(),
       },
     })
 

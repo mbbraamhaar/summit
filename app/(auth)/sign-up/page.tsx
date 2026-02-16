@@ -1,6 +1,7 @@
 import { SignUpForm } from '@/components/auth/sign-up-form'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import Link from 'next/link'
+import { getSafeRedirectPath } from '@/lib/auth/redirect'
 
 type SearchParams = Promise<{ [key: string]: string | string[] | undefined }>
 
@@ -10,9 +11,14 @@ export default async function SignUpPage({
   searchParams: SearchParams
 }) {
   const params = await searchParams
-  const inviteToken = typeof params.invite === 'string' ? params.invite : undefined
+  const redirectParam = typeof params.redirect === 'string' ? params.redirect : undefined
+  const legacyInviteToken = typeof params.invite === 'string' ? params.invite : undefined
+  const redirectTo = getSafeRedirectPath(
+    redirectParam || (legacyInviteToken ? `/invite/accept?token=${encodeURIComponent(legacyInviteToken)}` : undefined),
+    '/dashboard'
+  )
   const inviteEmail = typeof params.email === 'string' ? params.email : undefined
-  const isInviteFlow = Boolean(inviteToken)
+  const isInviteFlow = redirectTo.startsWith('/invite/accept')
 
   return (
     <Card>
@@ -25,10 +31,10 @@ export default async function SignUpPage({
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <SignUpForm inviteToken={inviteToken} inviteEmail={inviteEmail} />
+        <SignUpForm redirectTo={redirectTo} inviteEmail={inviteEmail} />
         <p className="text-sm text-center text-muted-foreground mt-4">
           Already have an account?{' '}
-          <Link href="/sign-in" className="text-primary hover:underline">
+          <Link href={`/sign-in?redirect=${encodeURIComponent(redirectTo)}${inviteEmail ? `&email=${encodeURIComponent(inviteEmail)}` : ''}`} className="text-primary hover:underline">
             Sign in
           </Link>
         </p>

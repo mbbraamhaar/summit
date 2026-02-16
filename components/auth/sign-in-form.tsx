@@ -18,7 +18,12 @@ const signInSchema = z.object({
 
 type SignInFormData = z.infer<typeof signInSchema>
 
-export function SignInForm() {
+interface SignInFormProps {
+  redirectTo?: string
+  initialEmail?: string
+}
+
+export function SignInForm({ redirectTo = '/dashboard', initialEmail }: SignInFormProps) {
   const router = useRouter()
   const [isLoading, setIsLoading] = useState(false)
 
@@ -28,6 +33,9 @@ export function SignInForm() {
     formState: { errors },
   } = useForm<SignInFormData>({
     resolver: zodResolver(signInSchema),
+    defaultValues: {
+      email: initialEmail || '',
+    },
   })
 
   async function onSubmit(data: SignInFormData) {
@@ -48,8 +56,7 @@ export function SignInForm() {
       return
     }
 
-    // Success - redirect to dashboard
-    router.push('/dashboard')
+    router.push(redirectTo)
     router.refresh()
   }
 

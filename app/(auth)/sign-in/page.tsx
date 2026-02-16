@@ -1,8 +1,22 @@
 import { SignInForm } from '@/components/auth/sign-in-form'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import Link from 'next/link'
+import { getSafeRedirectPath } from '@/lib/auth/redirect'
 
-export default function SignInPage() {
+type SearchParams = Promise<{ [key: string]: string | string[] | undefined }>
+
+export default async function SignInPage({
+  searchParams,
+}: {
+  searchParams: SearchParams
+}) {
+  const params = await searchParams
+  const redirectTo = getSafeRedirectPath(
+    typeof params.redirect === 'string' ? params.redirect : undefined,
+    '/dashboard'
+  )
+  const email = typeof params.email === 'string' ? params.email : undefined
+
   return (
     <Card>
       <CardHeader>
@@ -12,11 +26,11 @@ export default function SignInPage() {
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <SignInForm />
+        <SignInForm redirectTo={redirectTo} initialEmail={email} />
         <div className="text-sm text-center text-muted-foreground mt-4 space-y-2">
           <p>
-            Don't have an account?{' '}
-            <Link href="/sign-up" className="text-primary hover:underline">
+            Don&apos;t have an account?{' '}
+            <Link href={`/sign-up?redirect=${encodeURIComponent(redirectTo)}${email ? `&email=${encodeURIComponent(email)}` : ''}`} className="text-primary hover:underline">
               Sign up
             </Link>
           </p>
