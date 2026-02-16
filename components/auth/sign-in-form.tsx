@@ -56,7 +56,7 @@ export function SignInForm({ redirectTo = '/dashboard', initialEmail }: SignInFo
       return
     }
 
-    router.push(redirectTo)
+    router.push(`/auth/post-auth?redirect=${encodeURIComponent(redirectTo)}`)
     router.refresh()
   }
 

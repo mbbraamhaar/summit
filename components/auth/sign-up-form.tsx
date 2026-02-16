@@ -54,7 +54,8 @@ export function SignUpForm({ redirectTo = '/dashboard', inviteEmail }: SignUpFor
     setIsLoading(true)
     const supabase = createClient()
     const callbackUrl = new URL('/auth/callback', window.location.origin)
-    callbackUrl.searchParams.set('redirect', redirectTo)
+    const postAuthRedirectPath = `/auth/post-auth?redirect=${encodeURIComponent(redirectTo)}`
+    callbackUrl.searchParams.set('redirect', postAuthRedirectPath)
 
     const { error } = await supabase.auth.signUp({
       email: data.email,

@@ -28,7 +28,7 @@ Sprint 0 establishes the core technical infrastructure for Summit: development e
 
 ### Remaining: Days 6-10
 - ⏳ Profile management (email change with re-verification)
-- ⏳ Workspace system (member invitations)
+- ✅ Workspace system (member invitations + acceptance)
 - ⏳ Subscription & billing (Mollie)
 - ⏳ Security & compliance
 
@@ -99,6 +99,7 @@ Sprint 0 establishes the core technical infrastructure for Summit: development e
 - [x] Password update page (after reset link)
 - [x] Email verification handler (`/auth/callback`)
 - [x] Email verification success page
+- [x] Invite acceptance survives sign-in/sign-up/reset-password/update-password transitions
 
 **Auth Infrastructure:**
 - [x] Auth helper functions (`lib/auth/helpers.ts`)
@@ -160,9 +161,13 @@ Sprint 0 establishes the core technical infrastructure for Summit: development e
   - [x] Invite member by email
   - [x] Generate invitation tokens
   - [x] Email invitation link
-  - [x] Handle invitation acceptance
+  - [x] Canonical invite entry (`/invite?token=...`) with httpOnly invite cookie
+  - [x] Unified acceptance endpoint (`/invite/accept`) with idempotent processing
+  - [x] Delayed click support via invite cookie persistence (7 days)
+  - [x] Handle invitation acceptance with session email validation
 - [x] Member list view
-- [ ] Remove member functionality (owner only)
+- [x] Remove member functionality (owner only)
+- [x] Removal lifecycle email
 - [x] Role display (owner vs member badge)
 
 **Authorization UI:**
@@ -284,7 +289,8 @@ By the end of Sprint 0, the following must work:
 
 ### Remaining Success Criteria ⏳
 - [x] User can edit profile and upload avatar
-- [ ] Owner can invite members to workspace
+- [x] Owner can invite members to workspace
+- [x] Owner can remove members from workspace
 - [ ] Users can subscribe to a plan via Mollie
 - [ ] Subscription status correctly gates feature access
 - [ ] Webhooks process payments idempotently
@@ -358,20 +364,20 @@ For detailed implementation guidance, see:
 - **Days 3-4:** Database schema and Supabase ✅
 - **Day 5:** Authentication system ✅
 - **Day 6:** Profile management ✅
-- **Days 7-8:** Workspace system and member invitations ⏳
+- **Days 7-8:** Workspace system and member invitations ✅
 - **Days 9:** Subscription & billing (Mollie) ⏳
 - **Day 10:** Security, compliance, testing ⏳
 
-**Total: 10 working days** (6 complete, 4 remaining)
+**Total: 10 working days** (7 complete, 3 remaining)
 
 ---
 
 ## Next Steps
 
-**Immediate Next:** Complete workspace system + start billing foundation
-1. Member removal functionality (owner-only)
-2. Billing scaffold (Mollie client + checkout entry point)
-3. Subscription status feature-gating hooks
+**Immediate Next:** Start billing foundation + hardening
+1. Billing scaffold (Mollie client + checkout entry point)
+2. Subscription status feature-gating hooks
+3. Add invite/auth lifecycle tests (including reset-password and delayed invite acceptance)
 
 **After Profile:** Choose between:
 - Workspace system (member invitations)
@@ -379,8 +385,9 @@ For detailed implementation guidance, see:
 - Security & compliance
 
 Recommended order: Workspace → Security → Billing
+Recommended order: Security → Billing
 
 ---
 
 **Last Updated:** February 16, 2026  
-**Sprint 0 Progress:** 60% complete (6 of 10 days)
+**Sprint 0 Progress:** 70% complete (7 of 10 days)

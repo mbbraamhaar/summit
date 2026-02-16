@@ -54,7 +54,7 @@ export function UpdatePasswordForm() {
       description: 'Your password has been successfully updated.',
     })
 
-    router.push('/dashboard')
+    router.push('/auth/post-auth?redirect=%2Fdashboard')
   }
 
   return (

@@ -24,24 +24,6 @@ const removeMemberSchema = z.object({
   memberId: z.string().uuid('Invalid member id'),
 })
 
-function buildAuthRouteWithRedirect({
-  appUrl,
-  authPath,
-  rawToken,
-  email,
-}: {
-  appUrl: string
-  authPath: '/auth/sign-in' | '/auth/sign-up'
-  rawToken: string
-  email: string
-}) {
-  const inviteAcceptPath = `/invite/accept?token=${encodeURIComponent(rawToken)}`
-  const inviteUrl = new URL(authPath, appUrl)
-  inviteUrl.searchParams.set('redirect', inviteAcceptPath)
-  inviteUrl.searchParams.set('email', email)
-  return inviteUrl.toString()
-}
-
 async function authUserExistsByEmail(email: string) {
   const admin = createAdminClient()
   const loweredEmail = email.toLowerCase()
@@ -282,7 +264,10 @@ export async function createInvitation(formData: FormData) {
 
   const rawToken = randomBytes(32).toString('hex')
   const tokenHash = createHash('sha256').update(rawToken).digest('hex')
-  const inviteExpiryHours = Number(process.env.INVITE_EXPIRY_HOURS || '168')
+  const configuredInviteExpiryHours = Number(process.env.INVITE_EXPIRY_HOURS || '168')
+  const inviteExpiryHours = Number.isFinite(configuredInviteExpiryHours)
+    ? Math.max(configuredInviteExpiryHours, 168)
+    : 168
   const expiresAt = new Date(Date.now() + inviteExpiryHours * 60 * 60 * 1000).toISOString()
 
   const { error: insertError } = await supabase
@@ -302,12 +287,7 @@ export async function createInvitation(formData: FormData) {
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
 
-  const inviteUrl = buildAuthRouteWithRedirect({
-    appUrl,
-    authPath: hasAuthAccount ? '/auth/sign-in' : '/auth/sign-up',
-    rawToken,
-    email,
-  })
+  const inviteUrl = `${appUrl}/invite?token=${encodeURIComponent(rawToken)}`
 
   const emailResult = await sendInvitationEmail({
     toEmail: email,
