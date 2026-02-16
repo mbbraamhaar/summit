@@ -14,14 +14,23 @@ import { toast } from 'sonner'
 const signUpSchema = z.object({
   fullName: z.string().min(2, 'Name must be at least 2 characters'),
   email: z.string().email('Invalid email address'),
+  companyName: z.string()
+    .max(100, 'Company name must be less than 100 characters')
+    .optional(),
   password: z.string().min(8, 'Password must be at least 8 characters'),
 })
 
 type SignUpFormData = z.infer<typeof signUpSchema>
 
-export function SignUpForm() {
+interface SignUpFormProps {
+  inviteToken?: string
+  inviteEmail?: string
+}
+
+export function SignUpForm({ inviteToken, inviteEmail }: SignUpFormProps) {
   const router = useRouter()
   const [isLoading, setIsLoading] = useState(false)
+  const isInviteFlow = Boolean(inviteToken)
 
   const {
     register,
@@ -29,9 +38,19 @@ export function SignUpForm() {
     formState: { errors },
   } = useForm<SignUpFormData>({
     resolver: zodResolver(signUpSchema),
+    defaultValues: {
+      email: inviteEmail || '',
+    },
   })
 
   async function onSubmit(data: SignUpFormData) {
+    if (!isInviteFlow && (!data.companyName || data.companyName.trim().length < 2)) {
+      toast.error('Error', {
+        description: 'Company name must be at least 2 characters',
+      })
+      return
+    }
+
     setIsLoading(true)
     const supabase = createClient()
 
@@ -41,6 +60,8 @@ export function SignUpForm() {
       options: {
         data: {
           full_name: data.fullName,
+          company_name: isInviteFlow ? undefined : data.companyName,
+          invite_token: inviteToken,
         },
         emailRedirectTo: `${window.location.origin}/auth/callback`,
       },
@@ -82,12 +103,37 @@ export function SignUpForm() {
           type="email"
           placeholder="you@example.com"
           {...register('email')}
-          disabled={isLoading}
+          disabled={isLoading || Boolean(inviteEmail)}
+          readOnly={Boolean(inviteEmail)}
         />
         {errors.email && (
           <p className="text-sm text-destructive mt-1">{errors.email.message}</p>
         )}
+        {inviteEmail && (
+          <p className="text-xs text-muted-foreground mt-1">
+            This invitation is tied to {inviteEmail}.
+          </p>
+        )}
       </div>
+
+      {!isInviteFlow && (
+        <div>
+          <Label htmlFor="companyName">Company Name</Label>
+          <Input
+            id="companyName"
+            type="text"
+            placeholder="Acme Inc"
+            {...register('companyName')}
+            disabled={isLoading}
+          />
+          <p className="text-xs text-muted-foreground mt-1">
+            This will be your company name on invoices
+          </p>
+          {errors.companyName && (
+            <p className="text-sm text-destructive mt-1">{errors.companyName.message}</p>
+          )}
+        </div>
+      )}
 
       <div>
         <Label htmlFor="password">Password</Label>

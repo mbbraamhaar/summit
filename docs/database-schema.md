@@ -8,27 +8,36 @@
 
 ## Schema Overview
 
-Summit uses a **simplified single-workspace-per-user multi-tenancy model**:
-- Each user belongs to exactly ONE workspace
-- Workspaces are completely isolated from each other
+Summit uses a **simplified single-company-per-user multi-tenancy model**:
+- Each user belongs to exactly ONE company
+- Companies are completely isolated from each other
 - Email addresses are globally unique
-- RLS policies enforce workspace isolation at the database level
+- RLS policies enforce company isolation at the database level
 
 ---
 
 ## Tables
 
-### `workspaces`
+### `companies`
 
-Primary tenant table. Each workspace represents an isolated business/organization.
+Primary tenant table. Each company represents an isolated business/organization.
 
 ```sql
-create table workspaces (
+create table companies (
   id uuid default uuid_generate_v4() primary key,
   name text not null,
-  slug text unique not null,
   status text not null default 'trial' check (status in ('trial', 'active', 'past_due', 'suspended', 'canceled')),
   trial_ends_at timestamp with time zone,
+  company_registration_id text,
+  tax_id text,
+  address_line1 text,
+  address_line2 text,
+  city text,
+  postal_code text,
+  country text,
+  bank_account_name text,
+  bank_account_number text,
+  bank_bic text,
   created_at timestamp with time zone default timezone('utc'::text, now()) not null,
   updated_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
@@ -36,8 +45,7 @@ create table workspaces (
 
 **Fields:**
 - `id` - Unique identifier
-- `name` - Display name (e.g., "John's Workspace", "Acme Design Studio")
-- `slug` - URL-safe unique identifier (generated from email on signup)
+- `name` - Display name (e.g., "John's Company", "Acme Design Studio")
 - `status` - Current subscription/trial status
   - `trial` - In 14-day trial period
   - `active` - Paid and active subscription
@@ -45,31 +53,49 @@ create table workspaces (
   - `suspended` - Access suspended (read-only)
   - `canceled` - Subscription canceled
 - `trial_ends_at` - When trial period ends (set to signup + 14 days)
-- `created_at` - Workspace creation timestamp
+- `company_registration_id` - Official company registration number
+- `tax_id` - Tax identification number
+- `address_line1` - Invoice address line 1
+- `address_line2` - Invoice address line 2
+- `city` - Invoice city
+- `postal_code` - Invoice postal code
+- `country` - Invoice country
+- `bank_account_name` - Bank account holder name
+- `bank_account_number` - Bank account number (IBAN)
+- `bank_bic` - Bank BIC/SWIFT code
+- `created_at` - Company creation timestamp
 - `updated_at` - Last modification timestamp (auto-updated by trigger)
 
 **Indexes:**
 - Primary key on `id`
-- Unique constraint on `slug`
 
 **RLS Policies:**
 ```sql
--- Users can view their own workspace
-create policy "Users can view their workspace"
-  on workspaces for select
+-- Helper function used by policies to avoid recursive checks on profiles
+create or replace function public.current_user_company_id()
+returns uuid
+language sql
+security definer
+set search_path = public
+stable
+as $$
+  select company_id from public.profiles where id = auth.uid() limit 1;
+$$;
+
+-- Users can view their own company
+create policy "Users can view their company"
+  on companies for select
   using (
-    id = (
-      select workspace_id from profiles where id = auth.uid()
-    )
+    id = public.current_user_company_id()
   );
 
--- Owners can update their workspace
-create policy "Owners can update workspace"
-  on workspaces for update
+-- Owners can update their company
+create policy "Owners can update company"
+  on companies for update
   using (
     exists (
       select 1 from profiles
-      where profiles.workspace_id = workspaces.id
+      where profiles.company_id = companies.id
       and profiles.id = auth.uid()
       and profiles.role = 'owner'
     )
@@ -80,12 +106,12 @@ create policy "Owners can update workspace"
 
 ### `profiles`
 
-User profile information. Links users to their workspace and defines their role.
+User profile information. Links users to their company and defines their role.
 
 ```sql
 create table profiles (
   id uuid references auth.users on delete cascade primary key,
-  workspace_id uuid references workspaces on delete cascade not null,
+  company_id uuid references companies on delete cascade not null,
   email text not null unique,
   full_name text,
   avatar_url text,
@@ -97,11 +123,11 @@ create table profiles (
 
 **Fields:**
 - `id` - References `auth.users.id` (Supabase Auth user ID)
-- `workspace_id` - The ONE workspace this user belongs to
+- `company_id` - The ONE company this user belongs to
 - `email` - Email address (globally unique, enforced by unique constraint)
 - `full_name` - Display name (optional)
 - `avatar_url` - Profile picture URL (Supabase Storage path, optional)
-- `role` - User's role within their workspace
+- `role` - User's role within their company
   - `owner` - Full permissions (billing, member management, all data operations)
   - `member` - Full data permissions (no billing or member management)
 - `created_at` - Profile creation timestamp
@@ -109,26 +135,24 @@ create table profiles (
 
 **Relationships:**
 - `id` → `auth.users.id` (1:1, cascade delete)
-- `workspace_id` → `workspaces.id` (N:1, cascade delete)
+- `company_id` → `companies.id` (N:1, cascade delete)
 
 **Constraints:**
-- Email must be unique globally (one user can't have multiple workspaces)
+- Email must be unique globally (one user can't have multiple companies)
 - Role must be 'owner' or 'member'
 
 **Indexes:**
 - Primary key on `id`
 - Unique constraint on `email`
-- Foreign key index on `workspace_id`
+- Foreign key index on `company_id`
 
 **RLS Policies:**
 ```sql
--- Users can view all profiles in their workspace
-create policy "Users can view profiles in their workspace"
+-- Users can view all profiles in their company
+create policy "Users can view profiles in their company"
   on profiles for select
   using (
-    workspace_id = (
-      select workspace_id from profiles where id = auth.uid()
-    )
+    company_id = public.current_user_company_id()
   );
 
 -- Users can update their own profile
@@ -144,7 +168,7 @@ create policy "Owners can insert new members"
       select 1 from profiles
       where id = auth.uid()
       and role = 'owner'
-      and workspace_id = profiles.workspace_id
+      and company_id = profiles.company_id
     )
   );
 
@@ -156,7 +180,7 @@ create policy "Owners can delete members"
       select 1 from profiles p
       where p.id = auth.uid()
       and p.role = 'owner'
-      and p.workspace_id = profiles.workspace_id
+      and p.company_id = profiles.company_id
     )
     and id != auth.uid()
   );
@@ -225,12 +249,12 @@ create policy "Active plans are viewable by everyone"
 
 ### `subscriptions`
 
-Active subscriptions. Links workspaces to their paid plans.
+Active subscriptions. Links companies to their paid plans.
 
 ```sql
 create table subscriptions (
   id uuid default uuid_generate_v4() primary key,
-  workspace_id uuid references workspaces on delete cascade not null unique,
+  company_id uuid references companies on delete cascade not null unique,
   plan_id uuid references plans on delete restrict not null,
   status text not null check (status in ('active', 'canceled', 'past_due', 'suspended')),
   current_period_start timestamp with time zone,
@@ -245,7 +269,7 @@ create table subscriptions (
 
 **Fields:**
 - `id` - Unique identifier
-- `workspace_id` - Workspace this subscription belongs to (ONE subscription per workspace)
+- `company_id` - Company this subscription belongs to (ONE subscription per company)
 - `plan_id` - Plan being subscribed to
 - `status` - Current subscription status
   - `active` - Paid and active
@@ -261,22 +285,20 @@ create table subscriptions (
 - `updated_at` - Last modification timestamp (auto-updated by trigger)
 
 **Relationships:**
-- `workspace_id` → `workspaces.id` (1:1, cascade delete)
+- `company_id` → `companies.id` (1:1, cascade delete)
 - `plan_id` → `plans.id` (N:1, restrict delete to preserve history)
 
 **Constraints:**
-- One subscription per workspace (unique constraint on workspace_id)
+- One subscription per company (unique constraint on company_id)
 - Unique Mollie subscription ID
 
 **RLS Policies:**
 ```sql
--- Users can view their workspace's subscription
-create policy "Users can view their workspace subscription"
+-- Users can view their company's subscription
+create policy "Users can view their company subscription"
   on subscriptions for select
   using (
-    workspace_id = (
-      select workspace_id from profiles where id = auth.uid()
-    )
+    company_id = public.current_user_company_id()
   );
 
 -- Owners can manage subscriptions
@@ -285,7 +307,7 @@ create policy "Owners can manage subscriptions"
   using (
     exists (
       select 1 from profiles
-      where profiles.workspace_id = subscriptions.workspace_id
+      where profiles.company_id = subscriptions.company_id
       and profiles.id = auth.uid()
       and profiles.role = 'owner'
     )
@@ -298,36 +320,43 @@ create policy "Owners can manage subscriptions"
 
 ### `handle_new_user()`
 
-Automatically creates workspace and profile when a new user signs up via Supabase Auth.
+Automatically creates company and profile when a new user signs up via Supabase Auth.
 
 ```sql
 create or replace function public.handle_new_user()
 returns trigger as $$
 declare
-  new_workspace_id uuid;
-  workspace_slug text;
+  new_company_id uuid;
+  trial_end_date timestamptz;
 begin
-  -- Generate a unique slug from email
-  workspace_slug := split_part(new.email, '@', 1) || '-' || substring(new.id::text from 1 for 8);
+  -- Calculate trial end date (14 days from now)
+  trial_end_date := now() + interval '14 days';
   
-  -- Create workspace for new user
-  insert into public.workspaces (name, slug, status, trial_ends_at)
+  -- Create company for new user
+  insert into public.companies (name, status, trial_ends_at, created_at, updated_at)
   values (
-    coalesce(new.raw_user_meta_data->>'full_name', split_part(new.email, '@', 1)) || '''s Workspace',
-    workspace_slug,
+    coalesce(
+      new.raw_user_meta_data->>'company_name',
+      new.raw_user_meta_data->>'full_name',
+      split_part(new.email, '@', 1)
+    ) || '''s Company',
     'trial',
-    timezone('utc'::text, now()) + interval '14 days'
+    trial_end_date,
+    now(),
+    now()
   )
-  returning id into new_workspace_id;
+  returning id into new_company_id;
   
-  -- Create profile linked to workspace as owner
-  insert into public.profiles (id, workspace_id, email, full_name, role)
+  -- Create profile linked to company as owner
+  insert into public.profiles (id, company_id, email, full_name, role, created_at, updated_at)
   values (
     new.id,
-    new_workspace_id,
+    new_company_id,
     new.email,
-    new.raw_user_meta_data->>'full_name',
-    'owner'
+    coalesce(new.raw_user_meta_data->>'full_name', ''),
+    'owner',
+    now(),
+    now()
   );
   
   return new;
@@ -345,17 +374,16 @@ create trigger on_auth_user_created
 **What it does:**
 1. User signs up via Supabase Auth → `auth.users` row created
 2. Trigger fires → calls `handle_new_user()`
-3. Function generates unique workspace slug from email
-4. Creates workspace with:
-   - Name: "[User's name]'s Workspace" or "[email username]'s Workspace"
+3. Creates company with:
+   - Name: "[Company name]" (from signup metadata), or "[User's name]'s Company", or "[email username]'s Company"
    - Status: 'trial'
    - Trial ends: 14 days from now
-5. Creates profile with:
+4. Creates profile with:
    - User ID from auth.users
-   - Workspace ID from newly created workspace
+   - Company ID from newly created company
    - Email from auth.users
    - Role: 'owner'
-6. User is now ready to use Summit
+5. User is now ready to use Summit
 
 ---
 
@@ -380,9 +408,9 @@ create trigger update_profiles_updated_at
   before update on profiles
   for each row execute procedure update_updated_at_column();
 
--- For workspaces table
-create trigger update_workspaces_updated_at 
-  before update on workspaces
+-- For companies table
+create trigger update_companies_updated_at 
+  before update on companies
   for each row execute procedure update_updated_at_column();
 
 -- For subscriptions table
@@ -399,21 +427,19 @@ create trigger update_subscriptions_updated_at
 
 ### Security Model
 
-**Principle:** Workspace isolation
-- Users can ONLY see/modify data in their own workspace
-- Workspace ID is the isolation boundary
+**Principle:** Company isolation
+- Users can ONLY see/modify data in their own company
+- Company ID is the isolation boundary
 - `auth.uid()` identifies the current user
-- Policies check: "Does this user belong to the workspace of this data?"
+- Policies check: "Does this user belong to the company of this data?"
 
 ### Policy Patterns
 
 **Read (SELECT):**
 ```sql
--- Check if user's workspace matches data's workspace
+-- Check if user's company matches data's company
 using (
-  workspace_id = (
-    select workspace_id from profiles where id = auth.uid()
-  )
+  company_id = public.current_user_company_id()
 )
 ```
 
@@ -424,7 +450,7 @@ using (
   exists (
     select 1 from profiles
     where id = auth.uid()
-    and workspace_id = [target_workspace_id]
+    and company_id = [target_company_id]
     and role = 'owner'
   )
 )
@@ -444,31 +470,31 @@ These will be added in Sprint 1+ for the core invoicing functionality:
 
 ### `clients`
 - Client contact information
-- Linked to workspace
-- RLS: workspace isolation
+- Linked to company
+- RLS: company isolation
 
 ### `projects`
 - Fixed-bid projects with milestones
-- Linked to workspace and client
+- Linked to company and client
 - Status: draft, active, completed, canceled
-- RLS: workspace isolation
+- RLS: company isolation
 
 ### `milestones`
 - Project deliverables with payment amounts
 - Linked to project
 - Status: pending, completed, invoiced
-- RLS: via project → workspace chain
+- RLS: via project → company chain
 
 ### `invoices`
 - Generated invoices
-- Linked to workspace, client, project
+- Linked to company, client, project
 - Status: draft, issued, paid, void
-- RLS: workspace isolation
+- RLS: company isolation
 
 ### `payments`
 - Payment records against invoices
 - Linked to invoice
-- RLS: via invoice → workspace chain
+- RLS: via invoice → company chain
 
 ---
 
@@ -493,20 +519,20 @@ These will be added in Sprint 1+ for the core invoicing functionality:
 
 ## Common Queries
 
-### Get current user's workspace
+### Get current user's company
 ```sql
-select w.* 
-from workspaces w
-join profiles p on p.workspace_id = w.id
+select c.* 
+from companies c
+join profiles p on p.company_id = c.id
 where p.id = auth.uid();
 ```
 
-### Get all members in user's workspace
+### Get all members in user's company
 ```sql
 select p.*
 from profiles p
-where p.workspace_id = (
-  select workspace_id from profiles where id = auth.uid()
+where p.company_id = (
+  public.current_user_company_id()
 );
 ```
 
@@ -521,16 +547,16 @@ from profiles
 where id = auth.uid();
 ```
 
-### Get workspace subscription status
+### Get company subscription status
 ```sql
 select 
-  w.status as workspace_status,
+  c.status as company_status,
   s.status as subscription_status,
-  w.trial_ends_at,
+  c.trial_ends_at,
   s.current_period_end
-from workspaces w
-left join subscriptions s on s.workspace_id = w.id
-join profiles p on p.workspace_id = w.id
+from companies c
+left join subscriptions s on s.company_id = c.id
+join profiles p on p.company_id = c.id
 where p.id = auth.uid();
 ```
 
@@ -543,7 +569,7 @@ auth.users (Supabase Auth)
     |
     | (1:1)
     |
-profiles -----> workspaces
+profiles -----> companies
     |               |
     | (role:)       | (1:1)
     | owner/member  |
@@ -555,10 +581,10 @@ profiles -----> workspaces
 ```
 
 **Key relationships:**
-- One auth.user → One profile → One workspace
-- One workspace → One subscription (optional)
+- One auth.user → One profile → One company
+- One company → One subscription (optional)
 - One subscription → One plan
-- Multiple profiles → One workspace (owner invites members)
+- Multiple profiles → One company (owner invites members)
 
 ---
 
@@ -571,12 +597,12 @@ profiles -----> workspaces
    alter table your_table enable row level security;
    ```
 
-2. **Add workspace_id:**
+2. **Add company_id:**
    ```sql
-   workspace_id uuid references workspaces on delete cascade not null
+   company_id uuid references companies on delete cascade not null
    ```
 
-3. **Create RLS policies** for workspace isolation
+3. **Create RLS policies** for company isolation
 
 4. **Add updated_at trigger** if needed
 
@@ -593,7 +619,7 @@ Use Supabase SQL Editor with different auth contexts:
 set request.jwt.claim.sub = '[user-id]';
 
 -- Test query
-select * from workspaces;
+select * from companies;
 
 -- Reset
 reset request.jwt.claim.sub;

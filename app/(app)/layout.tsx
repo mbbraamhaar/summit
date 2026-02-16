@@ -1,12 +1,11 @@
 import { requireAuth } from '@/lib/auth/helpers'
 import { DashboardNav } from '@/components/layout/dashboard-nav'
 
-export default async function DashboardLayout({
+export default async function AppLayout({
   children,
 }: {
   children: React.ReactNode
 }) {
-  // Require authentication
   await requireAuth()
 
   return (

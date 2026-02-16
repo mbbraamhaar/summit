@@ -26,20 +26,23 @@ export function DashboardNav() {
             <Link href="/dashboard" className="text-sm text-foreground hover:text-primary">
               Dashboard
             </Link>
-            <Link href="/dashboard/clients" className="text-sm text-foreground hover:text-primary">
+            <Link href="/profile" className="text-sm text-foreground hover:text-primary">
+              Profile
+            </Link>
+            <Link href="/clients" className="text-sm text-foreground hover:text-primary">
               Clients
             </Link>
-            <Link href="/dashboard/projects" className="text-sm text-foreground hover:text-primary">
+            <Link href="/projects" className="text-sm text-foreground hover:text-primary">
               Projects
             </Link>
-            <Link href="/dashboard/invoices" className="text-sm text-foreground hover:text-primary">
+            <Link href="/invoices" className="text-sm text-foreground hover:text-primary">
               Invoices
             </Link>
           </div>
         </div>
 
         <div className="flex items-center space-x-4">
-          <Link href="/dashboard/settings" className="text-sm text-foreground hover:text-primary">
+          <Link href="/settings" className="text-sm text-foreground hover:text-primary">
             Settings
           </Link>
           <Button variant="outline" size="sm" onClick={handleSignOut}>

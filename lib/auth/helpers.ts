@@ -8,23 +8,42 @@ export async function getCurrentUser() {
   return { user, error }
 }
 
-// Get current user's profile (includes workspace info)
+// Get current user's profile (includes company info)
 export async function getCurrentProfile() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   
-  if (!user) return { profile: null, error: null }
+  if (!user) {
+    return { profile: null, error: null }
+  }
   
-  const { data: profile, error } = await supabase
+  // Try using the proper Supabase join syntax
+  // The foreign key is company_id in profiles table
+  const { data: profile, error: profileError } = await supabase
     .from('profiles')
     .select(`
       *,
-      workspace:workspaces(*)
+      companies (*)
     `)
     .eq('id', user.id)
     .single()
   
-  return { profile, error }
+  if (profileError) {
+    return { profile: null, error: profileError }
+  }
+  
+  if (!profile) {
+    return { profile: null, error: null }
+  }
+  
+  // Normalize the company data - Supabase returns it as 'companies' (plural)
+  // because that's the table name
+  const normalizedProfile = {
+    ...profile,
+    company: (profile as any).companies || null
+  }
+  
+  return { profile: normalizedProfile as any, error: null }
 }
 
 // Require authentication (redirect if not logged in)
@@ -48,11 +67,11 @@ export async function requireOwner() {
   return profile
 }
 
-// Check if user can access workspace features (not suspended/canceled)
-export async function canAccessWorkspace() {
+// Check if user can access company features (not suspended/canceled)
+export async function canAccessCompany() {
   const { profile } = await getCurrentProfile()
-  if (!profile?.workspace) return false
+  if (!profile?.company) return false
   
-  const status = profile.workspace.status
+  const status = (profile as any).company.status
   return status === 'trial' || status === 'active'
 }

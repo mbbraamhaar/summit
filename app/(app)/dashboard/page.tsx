@@ -13,15 +13,15 @@ export default async function DashboardPage() {
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
         <Card>
           <CardHeader>
-            <CardTitle>Your Workspace</CardTitle>
-            <CardDescription>{profile?.workspace?.name}</CardDescription>
+            <CardTitle>Your Company</CardTitle>
+            <CardDescription>{profile?.company?.name || 'Loading...'}</CardDescription>
           </CardHeader>
           <CardContent>
             <p className="text-sm text-muted-foreground">
-              Status: <span className="font-medium text-foreground">{profile?.workspace?.status}</span>
+              Status: <span className="font-medium text-foreground">{profile?.company?.status || 'N/A'}</span>
             </p>
             <p className="text-sm text-muted-foreground">
-              Role: <span className="font-medium text-foreground">{profile?.role}</span>
+              Role: <span className="font-medium text-foreground">{profile?.role || 'N/A'}</span>
             </p>
           </CardContent>
         </Card>

@@ -12,33 +12,122 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.1"
   }
-  graphql_public: {
-    Tables: {
-      [_ in never]: never
-    }
-    Views: {
-      [_ in never]: never
-    }
-    Functions: {
-      graphql: {
-        Args: {
-          extensions?: Json
-          operationName?: string
-          query?: string
-          variables?: Json
-        }
-        Returns: Json
-      }
-    }
-    Enums: {
-      [_ in never]: never
-    }
-    CompositeTypes: {
-      [_ in never]: never
-    }
-  }
   public: {
     Tables: {
+      companies: {
+        Row: {
+          address_line1: string | null
+          address_line2: string | null
+          bank_account_name: string | null
+          bank_account_number: string | null
+          bank_bic: string | null
+          city: string | null
+          company_registration_id: string | null
+          country: string | null
+          created_at: string
+          id: string
+          name: string
+          postal_code: string | null
+          status: string
+          tax_id: string | null
+          trial_ends_at: string | null
+          updated_at: string
+        }
+        Insert: {
+          address_line1?: string | null
+          address_line2?: string | null
+          bank_account_name?: string | null
+          bank_account_number?: string | null
+          bank_bic?: string | null
+          city?: string | null
+          company_registration_id?: string | null
+          country?: string | null
+          created_at?: string
+          id?: string
+          name: string
+          postal_code?: string | null
+          status?: string
+          tax_id?: string | null
+          trial_ends_at?: string | null
+          updated_at?: string
+        }
+        Update: {
+          address_line1?: string | null
+          address_line2?: string | null
+          bank_account_name?: string | null
+          bank_account_number?: string | null
+          bank_bic?: string | null
+          city?: string | null
+          company_registration_id?: string | null
+          country?: string | null
+          created_at?: string
+          id?: string
+          name?: string
+          postal_code?: string | null
+          status?: string
+          tax_id?: string | null
+          trial_ends_at?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      invitations: {
+        Row: {
+          accepted_at: string | null
+          company_id: string
+          created_at: string
+          email: string
+          expires_at: string
+          id: string
+          invited_by: string | null
+          revoked_at: string | null
+          status: string
+          token_hash: string
+          updated_at: string
+        }
+        Insert: {
+          accepted_at?: string | null
+          company_id: string
+          created_at?: string
+          email: string
+          expires_at: string
+          id?: string
+          invited_by?: string | null
+          revoked_at?: string | null
+          status?: string
+          token_hash: string
+          updated_at?: string
+        }
+        Update: {
+          accepted_at?: string | null
+          company_id?: string
+          created_at?: string
+          email?: string
+          expires_at?: string
+          id?: string
+          invited_by?: string | null
+          revoked_at?: string | null
+          status?: string
+          token_hash?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "invitations_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "invitations_invited_by_fkey"
+            columns: ["invited_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       plans: {
         Row: {
           created_at: string
@@ -78,40 +167,40 @@ export type Database = {
       profiles: {
         Row: {
           avatar_url: string | null
+          company_id: string
           created_at: string
           email: string
           full_name: string | null
           id: string
           role: string
           updated_at: string
-          workspace_id: string
         }
         Insert: {
           avatar_url?: string | null
+          company_id: string
           created_at?: string
           email: string
           full_name?: string | null
           id: string
           role?: string
           updated_at?: string
-          workspace_id: string
         }
         Update: {
           avatar_url?: string | null
+          company_id?: string
           created_at?: string
           email?: string
           full_name?: string | null
           id?: string
           role?: string
           updated_at?: string
-          workspace_id?: string
         }
         Relationships: [
           {
-            foreignKeyName: "profiles_workspace_id_fkey"
-            columns: ["workspace_id"]
+            foreignKeyName: "profiles_company_id_fkey"
+            columns: ["company_id"]
             isOneToOne: false
-            referencedRelation: "workspaces"
+            referencedRelation: "companies"
             referencedColumns: ["id"]
           },
         ]
@@ -119,6 +208,7 @@ export type Database = {
       subscriptions: {
         Row: {
           cancel_at_period_end: boolean | null
+          company_id: string
           created_at: string
           current_period_end: string | null
           current_period_start: string | null
@@ -128,10 +218,10 @@ export type Database = {
           plan_id: string
           status: string
           updated_at: string
-          workspace_id: string
         }
         Insert: {
           cancel_at_period_end?: boolean | null
+          company_id: string
           created_at?: string
           current_period_end?: string | null
           current_period_start?: string | null
@@ -141,10 +231,10 @@ export type Database = {
           plan_id: string
           status: string
           updated_at?: string
-          workspace_id: string
         }
         Update: {
           cancel_at_period_end?: boolean | null
+          company_id?: string
           created_at?: string
           current_period_end?: string | null
           current_period_start?: string | null
@@ -154,9 +244,15 @@ export type Database = {
           plan_id?: string
           status?: string
           updated_at?: string
-          workspace_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "subscriptions_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: true
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "subscriptions_plan_id_fkey"
             columns: ["plan_id"]
@@ -164,44 +260,7 @@ export type Database = {
             referencedRelation: "plans"
             referencedColumns: ["id"]
           },
-          {
-            foreignKeyName: "subscriptions_workspace_id_fkey"
-            columns: ["workspace_id"]
-            isOneToOne: true
-            referencedRelation: "workspaces"
-            referencedColumns: ["id"]
-          },
         ]
-      }
-      workspaces: {
-        Row: {
-          created_at: string
-          id: string
-          name: string
-          slug: string
-          status: string
-          trial_ends_at: string | null
-          updated_at: string
-        }
-        Insert: {
-          created_at?: string
-          id?: string
-          name: string
-          slug: string
-          status?: string
-          trial_ends_at?: string | null
-          updated_at?: string
-        }
-        Update: {
-          created_at?: string
-          id?: string
-          name?: string
-          slug?: string
-          status?: string
-          trial_ends_at?: string | null
-          updated_at?: string
-        }
-        Relationships: []
       }
     }
     Views: {
@@ -337,9 +396,6 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
-  graphql_public: {
-    Enums: {},
-  },
   public: {
     Enums: {},
   },

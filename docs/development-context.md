@@ -1,6 +1,6 @@
 # Summit - Development Context
 
-**Last Updated:** February 15, 2026  
+**Last Updated:** February 16, 2026  
 **Current Sprint:** Sprint 0 (Technical Foundation)  
 **Status:** Database complete, Authentication system next
 
@@ -129,13 +129,16 @@ const cookieStore = await cookies()
 
 ### Tables
 
-#### `workspaces`
+#### `companies`
 ```sql
 - id (uuid, pk)
 - name (text)
-- slug (text, unique)
 - status (text) - 'trial' | 'active' | 'past_due' | 'suspended' | 'canceled'
 - trial_ends_at (timestamp)
+- company_registration_id (text, nullable)
+- tax_id (text, nullable)
+- address fields (address_line1, address_line2, city, postal_code, country)
+- bank fields (bank_account_name, bank_account_number, bank_bic)
 - created_at (timestamp)
 - updated_at (timestamp)
 ```
@@ -143,7 +146,7 @@ const cookieStore = await cookies()
 #### `profiles`
 ```sql
 - id (uuid, pk, references auth.users)
-- workspace_id (uuid, references workspaces)
+- company_id (uuid, references companies)
 - email (text, unique)
 - full_name (text, nullable)
 - avatar_url (text, nullable)
@@ -153,7 +156,7 @@ const cookieStore = await cookies()
 ```
 
 **Key relationships:**
-- One profile = one workspace (1:1 via workspace_id)
+- One profile = one company (1:1 via company_id)
 - Email is globally unique (enforced)
 - Role determines UI access only (both can manage data)
 
@@ -177,7 +180,7 @@ const cookieStore = await cookies()
 #### `subscriptions`
 ```sql
 - id (uuid, pk)
-- workspace_id (uuid, references workspaces, unique)
+- company_id (uuid, references companies, unique)
 - plan_id (uuid, references plans)
 - status (text) - 'active' | 'canceled' | 'past_due' | 'suspended'
 - current_period_start (timestamp)
@@ -189,24 +192,24 @@ const cookieStore = await cookies()
 - updated_at (timestamp)
 ```
 
-**Important:** One subscription per workspace (enforced by unique constraint on workspace_id)
+**Important:** One subscription per company (enforced by unique constraint on company_id)
 
 ### Database Triggers
 
-#### Auto-create workspace and profile on signup
+#### Auto-create company and profile on signup
 ```sql
 -- Function: handle_new_user()
 -- Trigger: on_auth_user_created (after insert on auth.users)
 -- Does:
---   1. Generates unique workspace slug from email
---   2. Creates workspace with 14-day trial
---   3. Creates profile linked to workspace as owner
+--   1. Creates company with 14-day trial
+--   2. Uses company_name from signup metadata (or generates from name/email)
+--   3. Creates profile linked to company as owner
 ```
 
 #### Auto-update timestamps
 ```sql
 -- Function: update_updated_at_column()
--- Triggers on: profiles, workspaces, subscriptions
+-- Triggers on: profiles, companies, subscriptions
 ```
 
 ### RLS Policies (Row Level Security)
@@ -237,8 +240,8 @@ const cookieStore = await cookies()
 ```
 summit/
 ├── app/                    # Next.js App Router
-│   ├── (auth)/            # Auth routes (sign-in, sign-up, etc.) - TO BUILD
-│   ├── (dashboard)/       # Protected dashboard routes - TO BUILD
+│   ├── (auth)/            # Auth routes (sign-in, sign-up, etc.)
+│   ├── (app)/             # Protected app routes (dashboard, settings, etc.)
 │   ├── api/               # API routes
 │   │   └── webhooks/      # Mollie webhooks - TO BUILD
 │   ├── globals.css        # Global styles
@@ -285,12 +288,21 @@ MOLLIE_WEBHOOK_SECRET=your-webhook-secret
 
 # App
 NEXT_PUBLIC_APP_URL=http://localhost:3000
+
+# Invitations / Email (Resend)
+RESEND_API_KEY=re_xxxxxxxxx
+RESEND_FROM_EMAIL=Summit <no-reply@your-domain.com>
+INVITE_EXPIRY_HOURS=168
+
+# Optional profile avatar feature flag (stub)
+NEXT_PUBLIC_ENABLE_AVATAR_UPLOAD=false
 ```
 
 **Security notes:**
 - Service role key NEVER goes client-side
 - Only use anon key in browser
 - Mollie keys will be added when we integrate payments
+- Invitation emails are sent from server-side actions via Resend
 
 ---
 
@@ -468,8 +480,8 @@ Build the complete authentication flow:
    - `components/auth/reset-password-form.tsx` - Password reset form
 
 4. **Create protected route example:**
-   - `app/(dashboard)/dashboard/page.tsx` - Dashboard landing page (protected)
-   - `app/(dashboard)/layout.tsx` - Dashboard layout with nav
+   - `app/(app)/dashboard/page.tsx` - Dashboard landing page (protected)
+   - `app/(app)/layout.tsx` - Shared protected layout with nav
 
 5. **Add shadcn/ui components as needed:**
    - `npx shadcn@latest add form` - For auth forms
@@ -524,11 +536,10 @@ Before moving to next phase, verify:
 - [ ] Session persists across page reloads
 
 ### Database
-- [ ] Workspace auto-created on signup
+- [ ] Company auto-created on signup
 - [ ] Profile auto-created with correct role (owner)
-- [ ] Workspace slug is unique
 - [ ] Trial period set to 14 days
-- [ ] RLS policies work (can only see own workspace data)
+- [ ] RLS policies work (can only see own company data)
 
 ### UI/UX
 - [ ] Forms validate inputs
