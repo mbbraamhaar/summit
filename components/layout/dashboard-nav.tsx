@@ -34,9 +34,6 @@ export function DashboardNav({ email, fullName, avatarUrl }: DashboardNavProps) 
             <Link href="/dashboard" className="text-sm text-foreground hover:text-primary">
               Dashboard
             </Link>
-            <Link href="/profile" className="text-sm text-foreground hover:text-primary">
-              Profile
-            </Link>
             <Link href="/clients" className="text-sm text-foreground hover:text-primary">
               Clients
             </Link>
@@ -46,6 +43,9 @@ export function DashboardNav({ email, fullName, avatarUrl }: DashboardNavProps) 
             <Link href="/invoices" className="text-sm text-foreground hover:text-primary">
               Invoices
             </Link>
+            <Link href="/settings" className="text-sm text-foreground hover:text-primary">
+              Settings
+            </Link>
           </div>
         </div>
 
@@ -54,8 +54,8 @@ export function DashboardNav({ email, fullName, avatarUrl }: DashboardNavProps) 
             <AvatarImage src={avatarUrl || undefined} alt={`${fullName ?? email} avatar`} />
             <AvatarFallback>{getAvatarInitials(fullName, email)}</AvatarFallback>
           </Avatar>
-          <Link href="/settings" className="text-sm text-foreground hover:text-primary">
-            Settings
+          <Link href="/profile" className="text-sm text-foreground hover:text-primary">
+            Profile
           </Link>
           <Button variant="outline" size="sm" onClick={handleSignOut}>
             Sign Out
