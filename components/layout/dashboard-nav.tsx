@@ -4,8 +4,16 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { getAvatarInitials } from '@/lib/profile/avatar'
 
-export function DashboardNav() {
+interface DashboardNavProps {
+  email: string
+  fullName: string | null
+  avatarUrl: string | null
+}
+
+export function DashboardNav({ email, fullName, avatarUrl }: DashboardNavProps) {
   const router = useRouter()
 
   async function handleSignOut() {
@@ -42,6 +50,10 @@ export function DashboardNav() {
         </div>
 
         <div className="flex items-center space-x-4">
+          <Avatar className="h-9 w-9" aria-label="User avatar">
+            <AvatarImage src={avatarUrl || undefined} alt={`${fullName ?? email} avatar`} />
+            <AvatarFallback>{getAvatarInitials(fullName, email)}</AvatarFallback>
+          </Avatar>
           <Link href="/settings" className="text-sm text-foreground hover:text-primary">
             Settings
           </Link>

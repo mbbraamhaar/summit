@@ -2,7 +2,7 @@
 
 **Last Updated:** February 16, 2026  
 **Current Sprint:** Sprint 0 (Technical Foundation)  
-**Status:** Database complete, Authentication system next
+**Status:** Profile + settings complete, billing/security next
 
 ---
 
@@ -294,8 +294,7 @@ RESEND_API_KEY=re_xxxxxxxxx
 RESEND_FROM_EMAIL=Summit <no-reply@your-domain.com>
 INVITE_EXPIRY_HOURS=168
 
-# Optional profile avatar feature flag (stub)
-NEXT_PUBLIC_ENABLE_AVATAR_UPLOAD=false
+# Avatar upload is enabled by default in Sprint 0 (no feature flag required)
 ```
 
 **Security notes:**
@@ -343,9 +342,9 @@ NEXT_PUBLIC_ENABLE_AVATAR_UPLOAD=false
 - [ ] Protected route patterns
 
 #### 2. User Profile Management
-- [ ] Profile page (view/edit)
-- [ ] Avatar upload (Supabase Storage)
-- [ ] Profile editing form
+- [x] Profile page (view/edit)
+- [x] Avatar upload + removal (Supabase Storage)
+- [x] Profile editing form
 
 #### 3. Workspace System
 - [ ] Workspace context/provider (for switching/displaying current workspace)

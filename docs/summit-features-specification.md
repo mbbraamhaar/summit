@@ -1,6 +1,6 @@
 # Summit - Feature Specification (Updated)
 
-**Last Updated:** February 15, 2026  
+**Last Updated:** February 16, 2026  
 **Version:** 1.0 (Fixed-Bid Projects Only)
 
 ## Overview
@@ -28,6 +28,7 @@ This document outlines the features for Summit, organized by implementation phas
 - Password reset ⏳
 - Role model: owner vs member ✅ (DB implemented)
 - Member management: owner can invite/remove ⏳
+- Avatar upload/removal with initials fallback ✅
 
 **Role Capabilities:**
 
@@ -267,7 +268,7 @@ This document outlines the features for Summit, organized by implementation phas
 
 **Sprint 0 (Foundation) - 10 days:**
 - Days 1-3: Environment + Database ✅
-- Days 4-5: Authentication ⏳
+- Days 4-5: Authentication ✅
 - Days 6-7: Authorization + Workspace System ⏳
 - Days 8-9: Mollie Integration + Subscriptions ⏳
 - Day 10: Security + Compliance ⏳

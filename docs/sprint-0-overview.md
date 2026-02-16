@@ -27,7 +27,7 @@ Sprint 0 establishes the core technical infrastructure for Summit: development e
 - ✅ Authentication system
 
 ### Remaining: Days 6-10
-- ⏳ Profile management
+- ⏳ Profile management (email change with re-verification)
 - ⏳ Workspace system (member invitations)
 - ⏳ Subscription & billing (Mollie)
 - ⏳ Security & compliance
@@ -134,14 +134,15 @@ Sprint 0 establishes the core technical infrastructure for Summit: development e
 **Profile Pages:**
 - [x] Profile viewing page (`/profile`)
 - [x] Profile editing form
-- [x] Avatar upload interface (stub placeholder)
+- [x] Avatar upload and removal interface
+- [x] Top-nav avatar rendering with initials fallback
 
 **Profile Features:**
 - [x] Update full name
 - [ ] Update email (with re-verification)
-- [ ] Upload avatar to Supabase Storage
-- [ ] Supabase Storage bucket for avatars
-- [x] Image upload helper stubs
+- [x] Upload avatar to Supabase Storage
+- [x] Remove avatar (revert to initials fallback)
+- [x] Supabase Storage bucket + policies for avatars
 
 **Estimated Time:** 1 day
 
@@ -282,7 +283,7 @@ By the end of Sprint 0, the following must work:
 - [x] Service role key never exposed client-side
 
 ### Remaining Success Criteria ⏳
-- [ ] User can edit profile and upload avatar
+- [x] User can edit profile and upload avatar
 - [ ] Owner can invite members to workspace
 - [ ] Users can subscribe to a plan via Mollie
 - [ ] Subscription status correctly gates feature access
@@ -356,30 +357,30 @@ For detailed implementation guidance, see:
 - **Days 1-2:** Environment setup ✅
 - **Days 3-4:** Database schema and Supabase ✅
 - **Day 5:** Authentication system ✅
-- **Day 6:** Profile management ⏳
+- **Day 6:** Profile management ✅
 - **Days 7-8:** Workspace system and member invitations ⏳
 - **Days 9:** Subscription & billing (Mollie) ⏳
 - **Day 10:** Security, compliance, testing ⏳
 
-**Total: 10 working days** (5 complete, 5 remaining)
+**Total: 10 working days** (6 complete, 4 remaining)
 
 ---
 
 ## Next Steps
 
-**Immediate Next:** Build user profile management system
-1. Profile viewing page
-2. Profile editing form
-3. Avatar upload with Supabase Storage
+**Immediate Next:** Complete workspace system + start billing foundation
+1. Member removal functionality (owner-only)
+2. Billing scaffold (Mollie client + checkout entry point)
+3. Subscription status feature-gating hooks
 
 **After Profile:** Choose between:
 - Workspace system (member invitations)
 - Subscription & billing (Mollie)
 - Security & compliance
 
-Recommended order: Profile → Security → Billing → Workspace
+Recommended order: Workspace → Security → Billing
 
 ---
 
 **Last Updated:** February 16, 2026  
-**Sprint 0 Progress:** 50% complete (5 of 10 days)
+**Sprint 0 Progress:** 60% complete (6 of 10 days)

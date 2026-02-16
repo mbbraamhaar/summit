@@ -1,9 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { CompanyForm } from '@/components/settings/company-form'
-import { SubscriptionTab } from '@/components/settings/subscription-tab'
-import { MembersTab } from '@/components/settings/members-tab'
+import { SettingsTabs } from '@/components/settings/settings-tabs'
 
 type SearchParams = Promise<{ [key: string]: string | string[] | undefined }>
 
@@ -67,36 +64,15 @@ export default async function SettingsPage({
         </p>
       </div>
 
-      <Tabs value={activeTab} className="space-y-6">
-        <TabsList>
-          <TabsTrigger value="company" asChild>
-            <a href="/settings?tab=company">Company</a>
-          </TabsTrigger>
-          <TabsTrigger value="subscription" asChild>
-            <a href="/settings?tab=subscription">Subscription</a>
-          </TabsTrigger>
-          <TabsTrigger value="members" asChild>
-            <a href="/settings?tab=members">Members</a>
-          </TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="company" className="space-y-6">
-          <CompanyForm company={profile.company} userRole={profile.role} />
-        </TabsContent>
-
-        <TabsContent value="subscription" className="space-y-6">
-          <SubscriptionTab subscription={subscription} userRole={profile.role} />
-        </TabsContent>
-
-        <TabsContent value="members" className="space-y-6">
-          <MembersTab
-            members={members || []}
-            pendingInvitations={pendingInvitations || []}
-            currentUserId={user.id}
-            userRole={profile.role}
-          />
-        </TabsContent>
-      </Tabs>
+      <SettingsTabs
+        activeTab={activeTab}
+        company={profile.company}
+        userRole={profile.role}
+        subscription={subscription}
+        members={members || []}
+        pendingInvitations={pendingInvitations || []}
+        currentUserId={user.id}
+      />
     </div>
   )
 }

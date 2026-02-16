@@ -7,11 +7,6 @@ import { createHash, randomBytes } from 'crypto'
 import { z } from 'zod'
 import { sendInvitationEmail } from '@/lib/email/invitations'
 
-const companyFieldSchema = z.object({
-  field: z.string(),
-  value: z.string().nullable(),
-})
-
 const deleteCompanySchema = z.object({
   companyName: z.string().min(1, 'Company name is required'),
 })
@@ -23,69 +18,6 @@ const createInvitationSchema = z.object({
 const revokeInvitationSchema = z.object({
   invitationId: z.string().uuid('Invalid invitation id'),
 })
-
-export async function updateCompanyField(formData: FormData) {
-  const supabase = await createClient()
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-  if (!user) {
-    return { success: false, error: 'Unauthorized' }
-  }
-
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('role, company_id')
-    .eq('id', user.id)
-    .single()
-
-  if (!profile) {
-    return { success: false, error: 'Profile not found' }
-  }
-
-  if (profile.role !== 'owner') {
-    return { success: false, error: 'Only owners can edit company settings' }
-  }
-
-  const field = formData.get('field') as string
-  const value = formData.get('value') as string | null
-
-  const validation = companyFieldSchema.safeParse({ field, value })
-  if (!validation.success) {
-    return { success: false, error: 'Invalid input' }
-  }
-
-  const allowedFields = [
-    'name',
-    'company_registration_id',
-    'tax_id',
-    'address_line1',
-    'address_line2',
-    'city',
-    'postal_code',
-    'country',
-    'bank_account_name',
-    'bank_account_number',
-    'bank_bic',
-  ]
-
-  if (!allowedFields.includes(field)) {
-    return { success: false, error: 'Invalid field' }
-  }
-
-  const { error } = await supabase
-    .from('companies')
-    .update({ [field]: value })
-    .eq('id', profile.company_id)
-
-  if (error) {
-    return { success: false, error: error.message }
-  }
-
-  revalidatePath('/settings')
-  return { success: true }
-}
 
 export async function updateCompany(formData: FormData) {
   const supabase = await createClient()

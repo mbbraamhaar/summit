@@ -7,13 +7,36 @@ export const AVATAR_ALLOWED_MIME_TYPES = [
 ]
 
 export function isAvatarUploadEnabled() {
-  return process.env.NEXT_PUBLIC_ENABLE_AVATAR_UPLOAD === 'true'
+  return true
 }
 
 export function getAvatarPlaceholderMessage() {
-  if (isAvatarUploadEnabled()) {
-    return 'Avatar upload wiring is enabled, storage integration is coming next.'
+  return 'Upload a JPG, PNG, or WebP image up to 2MB.'
+}
+
+export function getAvatarExtensionFromMimeType(mimeType: string): string | null {
+  switch (mimeType) {
+    case 'image/jpeg':
+      return 'jpg'
+    case 'image/png':
+      return 'png'
+    case 'image/webp':
+      return 'webp'
+    default:
+      return null
+  }
+}
+
+export function getAvatarInitials(fullName: string | null, email: string): string {
+  const trimmedName = (fullName ?? '').trim()
+  if (trimmedName.length > 0) {
+    const parts = trimmedName.split(/\s+/).filter(Boolean)
+    if (parts.length >= 2) {
+      return `${parts[0][0]}${parts[1][0]}`.toUpperCase()
+    }
+    return parts[0].slice(0, 2).toUpperCase()
   }
 
-  return 'Avatar upload is coming soon.'
+  const emailPrefix = email.split('@')[0] ?? ''
+  return emailPrefix.slice(0, 2).toUpperCase() || 'U'
 }

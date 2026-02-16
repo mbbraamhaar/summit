@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { Tables } from '@/types/database'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -9,19 +9,51 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { CountryCombobox } from '@/components/settings/country-combobox'
-import { updateCompanyField, updateCompany, deleteCompany } from '@/app/(app)/settings/actions'
+import { updateCompany, deleteCompany } from '@/app/(app)/settings/actions'
 import { toast } from 'sonner'
-import { Loader2, AlertCircle, Check } from 'lucide-react'
+import { Loader2, AlertCircle } from 'lucide-react'
 
 type Company = Tables<'companies'>
+type CompanyFormData = {
+  name: string
+  company_registration_id: string
+  tax_id: string
+  address_line1: string
+  address_line2: string
+  city: string
+  postal_code: string
+  country: string
+  bank_account_name: string
+  bank_account_number: string
+  bank_bic: string
+}
+type CompanyField = keyof CompanyFormData
+
+const REQUIRED_FIELDS: CompanyField[] = [
+  'name',
+  'tax_id',
+  'address_line1',
+  'city',
+  'postal_code',
+  'country',
+  'bank_account_name',
+  'bank_account_number',
+]
 
 interface CompanyFormProps {
   company: Company
   userRole: string
+  onSaveStateChange?: (state: { isOwner: boolean; isDirty: boolean; isSaving: boolean }) => void
+  onSaveRequestRegister?: (save: (() => void) | null) => void
 }
 
-export function CompanyForm({ company, userRole }: CompanyFormProps) {
-  const [formData, setFormData] = useState({
+export function CompanyForm({
+  company,
+  userRole,
+  onSaveStateChange,
+  onSaveRequestRegister,
+}: CompanyFormProps) {
+  const [formData, setFormData] = useState<CompanyFormData>({
     name: company.name || '',
     company_registration_id: company.company_registration_id || '',
     tax_id: company.tax_id || '',
@@ -36,6 +68,7 @@ export function CompanyForm({ company, userRole }: CompanyFormProps) {
   })
   
   const [isDirty, setIsDirty] = useState(false)
+  const [fieldErrors, setFieldErrors] = useState<Partial<Record<CompanyField, string>>>({})
   const [isSaving, setIsSaving] = useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [deleteConfirmName, setDeleteConfirmName] = useState('')
@@ -51,40 +84,40 @@ export function CompanyForm({ company, userRole }: CompanyFormProps) {
     )
     setIsDirty(hasChanges)
   }, [formData])
+
+  useEffect(() => {
+    onSaveStateChange?.({ isOwner, isDirty, isSaving })
+  }, [isOwner, isDirty, isSaving, onSaveStateChange])
   
   // Handle field change
-  const handleFieldChange = (field: string, value: string) => {
+  const handleFieldChange = (field: CompanyField, value: string) => {
     setFormData((prev) => ({ ...prev, [field]: value }))
+    if (REQUIRED_FIELDS.includes(field) && value.trim().length > 0) {
+      setFieldErrors((prev) => ({ ...prev, [field]: undefined }))
+    }
   }
-  
-  // Auto-save on blur
-  const handleFieldBlur = async (field: string, value: string) => {
-    if (!isOwner) return
-    
-    // Only save if value changed
-    if (value === initialDataRef.current[field as keyof typeof formData]) {
-      return
-    }
-    
-    const formDataToSend = new FormData()
-    formDataToSend.append('field', field)
-    formDataToSend.append('value', value)
-    
-    const result = await updateCompanyField(formDataToSend)
-    
-    if (result.success) {
-      // Update initial data
-      initialDataRef.current = { ...initialDataRef.current, [field]: value }
-      
-      toast.success('Changes saved')
-    } else {
-      toast.error(result.error || 'Failed to save changes')
-    }
+
+  const validateRequiredFields = (data: CompanyFormData) => {
+    const nextErrors: Partial<Record<CompanyField, string>> = {}
+
+    REQUIRED_FIELDS.forEach((field) => {
+      if (data[field].trim().length === 0) {
+        nextErrors[field] = 'This field is required'
+      }
+    })
+
+    return nextErrors
   }
   
   // Save all changes
-  const handleSaveAll = async () => {
-    if (!isOwner || !isDirty) return
+  const handleSaveAll = useCallback(async () => {
+    if (!isOwner || !isDirty || isSaving) return
+
+    const nextErrors = validateRequiredFields(formData)
+    setFieldErrors(nextErrors)
+    if (Object.keys(nextErrors).length > 0) {
+      return
+    }
     
     setIsSaving(true)
     
@@ -100,12 +133,20 @@ export function CompanyForm({ company, userRole }: CompanyFormProps) {
     if (result.success) {
       initialDataRef.current = { ...formData }
       setIsDirty(false)
+      setFieldErrors({})
       
-      toast.success('All changes saved')
+      toast.success('Changes saved')
     } else {
       toast.error(result.error || 'Failed to save changes')
     }
-  }
+  }, [formData, isDirty, isOwner, isSaving])
+
+  useEffect(() => {
+    onSaveRequestRegister?.(() => {
+      void handleSaveAll()
+    })
+    return () => onSaveRequestRegister?.(null)
+  }, [handleSaveAll, onSaveRequestRegister])
   
   // Delete company
   const handleDeleteCompany = async () => {
@@ -135,7 +176,7 @@ export function CompanyForm({ company, userRole }: CompanyFormProps) {
           </AlertDescription>
         </Alert>
       )}
-      
+
       <Card>
         <CardHeader>
           <CardTitle>Company information</CardTitle>
@@ -150,10 +191,13 @@ export function CompanyForm({ company, userRole }: CompanyFormProps) {
               id="name"
               value={formData.name}
               onChange={(e) => handleFieldChange('name', e.target.value)}
-              onBlur={(e) => handleFieldBlur('name', e.target.value)}
+              aria-invalid={Boolean(fieldErrors.name)}
               disabled={!isOwner}
               required
             />
+            {fieldErrors.name && (
+              <p className="text-sm text-destructive">{fieldErrors.name}</p>
+            )}
           </div>
           
           <div className="space-y-2">
@@ -162,7 +206,6 @@ export function CompanyForm({ company, userRole }: CompanyFormProps) {
               id="company_registration_id"
               value={formData.company_registration_id}
               onChange={(e) => handleFieldChange('company_registration_id', e.target.value)}
-              onBlur={(e) => handleFieldBlur('company_registration_id', e.target.value)}
               disabled={!isOwner}
             />
           </div>
@@ -173,10 +216,13 @@ export function CompanyForm({ company, userRole }: CompanyFormProps) {
               id="tax_id"
               value={formData.tax_id}
               onChange={(e) => handleFieldChange('tax_id', e.target.value)}
-              onBlur={(e) => handleFieldBlur('tax_id', e.target.value)}
+              aria-invalid={Boolean(fieldErrors.tax_id)}
               disabled={!isOwner}
               required
             />
+            {fieldErrors.tax_id && (
+              <p className="text-sm text-destructive">{fieldErrors.tax_id}</p>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -195,10 +241,13 @@ export function CompanyForm({ company, userRole }: CompanyFormProps) {
               id="address_line1"
               value={formData.address_line1}
               onChange={(e) => handleFieldChange('address_line1', e.target.value)}
-              onBlur={(e) => handleFieldBlur('address_line1', e.target.value)}
+              aria-invalid={Boolean(fieldErrors.address_line1)}
               disabled={!isOwner}
               required
             />
+            {fieldErrors.address_line1 && (
+              <p className="text-sm text-destructive">{fieldErrors.address_line1}</p>
+            )}
           </div>
           
           <div className="space-y-2">
@@ -207,7 +256,6 @@ export function CompanyForm({ company, userRole }: CompanyFormProps) {
               id="address_line2"
               value={formData.address_line2}
               onChange={(e) => handleFieldChange('address_line2', e.target.value)}
-              onBlur={(e) => handleFieldBlur('address_line2', e.target.value)}
               disabled={!isOwner}
             />
           </div>
@@ -219,10 +267,13 @@ export function CompanyForm({ company, userRole }: CompanyFormProps) {
                 id="city"
                 value={formData.city}
                 onChange={(e) => handleFieldChange('city', e.target.value)}
-                onBlur={(e) => handleFieldBlur('city', e.target.value)}
+                aria-invalid={Boolean(fieldErrors.city)}
                 disabled={!isOwner}
                 required
               />
+              {fieldErrors.city && (
+                <p className="text-sm text-destructive">{fieldErrors.city}</p>
+              )}
             </div>
             
             <div className="space-y-2">
@@ -231,10 +282,13 @@ export function CompanyForm({ company, userRole }: CompanyFormProps) {
                 id="postal_code"
                 value={formData.postal_code}
                 onChange={(e) => handleFieldChange('postal_code', e.target.value)}
-                onBlur={(e) => handleFieldBlur('postal_code', e.target.value)}
+                aria-invalid={Boolean(fieldErrors.postal_code)}
                 disabled={!isOwner}
                 required
               />
+              {fieldErrors.postal_code && (
+                <p className="text-sm text-destructive">{fieldErrors.postal_code}</p>
+              )}
             </div>
           </div>
           
@@ -242,12 +296,12 @@ export function CompanyForm({ company, userRole }: CompanyFormProps) {
             <Label htmlFor="country">Country *</Label>
             <CountryCombobox
               value={formData.country}
-              onValueChange={(value) => {
-                handleFieldChange('country', value)
-                handleFieldBlur('country', value)
-              }}
+              onValueChange={(value) => handleFieldChange('country', value)}
               disabled={!isOwner}
             />
+            {fieldErrors.country && (
+              <p className="text-sm text-destructive">{fieldErrors.country}</p>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -266,10 +320,13 @@ export function CompanyForm({ company, userRole }: CompanyFormProps) {
               id="bank_account_name"
               value={formData.bank_account_name}
               onChange={(e) => handleFieldChange('bank_account_name', e.target.value)}
-              onBlur={(e) => handleFieldBlur('bank_account_name', e.target.value)}
+              aria-invalid={Boolean(fieldErrors.bank_account_name)}
               disabled={!isOwner}
               required
             />
+            {fieldErrors.bank_account_name && (
+              <p className="text-sm text-destructive">{fieldErrors.bank_account_name}</p>
+            )}
           </div>
           
           <div className="space-y-2">
@@ -278,10 +335,13 @@ export function CompanyForm({ company, userRole }: CompanyFormProps) {
               id="bank_account_number"
               value={formData.bank_account_number}
               onChange={(e) => handleFieldChange('bank_account_number', e.target.value)}
-              onBlur={(e) => handleFieldBlur('bank_account_number', e.target.value)}
+              aria-invalid={Boolean(fieldErrors.bank_account_number)}
               disabled={!isOwner}
               required
             />
+            {fieldErrors.bank_account_number && (
+              <p className="text-sm text-destructive">{fieldErrors.bank_account_number}</p>
+            )}
           </div>
           
           <div className="space-y-2">
@@ -290,36 +350,11 @@ export function CompanyForm({ company, userRole }: CompanyFormProps) {
               id="bank_bic"
               value={formData.bank_bic}
               onChange={(e) => handleFieldChange('bank_bic', e.target.value)}
-              onBlur={(e) => handleFieldBlur('bank_bic', e.target.value)}
               disabled={!isOwner}
             />
           </div>
         </CardContent>
       </Card>
-      
-      {isOwner && (
-        <div className="flex justify-end">
-          <Button
-            onClick={handleSaveAll}
-            disabled={!isDirty || isSaving}
-            className="min-w-[180px]"
-          >
-            {isSaving ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Saving...
-              </>
-            ) : isDirty ? (
-              'Save changes'
-            ) : (
-              <>
-                <Check className="mr-2 h-4 w-4" />
-                All changes saved
-              </>
-            )}
-          </Button>
-        </div>
-      )}
       
       {isOwner && (
         <Card className="border-destructive">
