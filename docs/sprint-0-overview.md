@@ -73,7 +73,7 @@ Sprint 0 establishes the core technical infrastructure for Summit: development e
 - [x] TypeScript types generated (`types/database.ts`)
 
 **Database Schema:**
-- [x] `workspaces` table (tenant container)
+- [x] `companies` table (tenant container)
 - [x] `profiles` table (user profiles with workspace_id and role)
 - [x] `plans` table (subscription plans)
 - [x] `subscriptions` table (workspace subscriptions)
@@ -82,7 +82,7 @@ Sprint 0 establishes the core technical infrastructure for Summit: development e
 - [x] Seeded data (Summit Pro monthly/yearly plans)
 
 **Key Decisions:**
-- One workspace per user (email globally unique)
+- One company per user (email globally unique)
 - Owner vs Member roles (members have full data access)
 - 14-day trial period starting after email verification
 - Workspace status tracks: trial | active | past_due | suspended | canceled
