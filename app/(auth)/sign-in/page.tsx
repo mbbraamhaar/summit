@@ -16,6 +16,7 @@ export default async function SignInPage({
     '/dashboard'
   )
   const email = typeof params.email === 'string' ? params.email : undefined
+  const reason = typeof params.reason === 'string' ? params.reason : undefined
 
   return (
     <Card>
@@ -26,6 +27,11 @@ export default async function SignInPage({
         </CardDescription>
       </CardHeader>
       <CardContent>
+        {reason === 'removed' ? (
+          <p className="mb-4 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            Your access was removed. Please sign in again if you were re-invited.
+          </p>
+        ) : null}
         <SignInForm redirectTo={redirectTo} initialEmail={email} />
         <div className="text-sm text-center text-muted-foreground mt-4 space-y-2">
           <p>
