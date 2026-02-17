@@ -1,8 +1,8 @@
 # Summit - Development Context
 
-**Last Updated:** February 16, 2026  
+**Last Updated:** February 17, 2026  
 **Current Sprint:** Sprint 0 (Technical Foundation)  
-**Status:** Profile + settings complete, billing/security next
+**Status:** Active
 
 ---
 
@@ -50,23 +50,23 @@
 
 ## Key Architectural Decisions
 
-### 1. Multi-Tenancy Model: Single Workspace Per User
+### 1. Multi-Tenancy Model: Single Company Per User
 
-**CRITICAL:** This is NOT a traditional multi-workspace model.
+**CRITICAL:** This is NOT a traditional multi-organization membership model.
 
 **The Model:**
-- One user = one workspace (forever)
-- Email address is globally unique (can't join another workspace)
-- When user signs up → auto-creates workspace → becomes owner
-- Owners can invite members to THEIR workspace
+- One user = one company (forever)
+- Email address is globally unique (can't join another company)
+- When user signs up → auto-creates company → becomes owner
+- Owners can invite members to THEIR company
 - Members have full data access (create clients, projects, invoices)
-- Owners control billing, invites, and workspace settings
+- Owners control billing, invites, and company settings
 
 **Why this matters:**
-- Simpler schema (no complex workspace_members join table)
+- Simpler schema (no complex company_members join table)
 - Clearer ownership model
-- Still multi-tenant (complete workspace isolation via RLS)
-- Each workspace has own subscription
+- Still multi-tenant (complete company isolation via RLS)
+- Each company has own subscription
 
 ### 2. Role Model: Owner vs Member
 
@@ -82,24 +82,24 @@
 - ✅ View billing info (read-only)
 - ❌ Cannot manage subscription
 - ❌ Cannot invite/remove members
-- ❌ Cannot delete workspace
+- ❌ Cannot delete company
 
 ### 3. Trial & Subscription Model
 
 **Trial Period:** 14 days (starts after email verification)
 - User signs up → email verification → trial starts
-- Workspace status: `trial`
+- Company status: `trial`
 - Full access during trial
 
 **Subscription:**
-- Tied to workspace, not individual users
+- Tied to company, not individual users
 - One plan: "Summit Pro" (monthly or yearly)
 - Monthly: €15/month (note: we seeded with 15.00, not 29.00)
 - Yearly: €150/year
 - When trial ends or payment fails: access blocked but data readable
 
 **Access Control:**
-- `workspace.status` = 'trial' | 'active' | 'past_due' | 'suspended' | 'canceled'
+- `companies.status` = 'trial' | 'active' | 'past_due' | 'suspended' | 'canceled'
 - `trial` or `active` → full access
 - `past_due`, `suspended`, `canceled` → read-only access (can log in, view data, cannot create/edit)
 
@@ -156,7 +156,7 @@ const cookieStore = await cookies()
 ```
 
 **Key relationships:**
-- One profile = one company (1:1 via company_id)
+- One profile belongs to one company (many profiles can belong to the same company)
 - Email is globally unique (enforced)
 - Role determines UI access only (both can manage data)
 
@@ -194,6 +194,21 @@ const cookieStore = await cookies()
 
 **Important:** One subscription per company (enforced by unique constraint on company_id)
 
+#### `invitations`
+```sql
+- id (uuid, pk)
+- company_id (uuid, references companies)
+- email (text)
+- token_hash (text, unique)
+- status (text) - 'pending' | 'accepted' | 'expired' | 'revoked'
+- invited_by (uuid, references profiles, nullable)
+- expires_at (timestamp)
+- accepted_at (timestamp, nullable)
+- revoked_at (timestamp, nullable)
+- created_at (timestamp)
+- updated_at (timestamp)
+```
+
 ### Database Triggers
 
 #### Auto-create company and profile on signup
@@ -209,7 +224,7 @@ const cookieStore = await cookies()
 #### Auto-update timestamps
 ```sql
 -- Function: update_updated_at_column()
--- Triggers on: profiles, companies, subscriptions
+-- Triggers on: profiles, companies, subscriptions, invitations
 ```
 
 ### RLS Policies (Row Level Security)
@@ -217,21 +232,25 @@ const cookieStore = await cookies()
 **ALL tables have RLS enabled.** Key policies:
 
 #### Profiles
-- Users can view profiles in their workspace
+- Users can view profiles in their company
 - Users can update their own profile
 - Owners can insert new members (invitations)
 - Owners can delete members (but not themselves)
 
-#### Workspaces
-- Users can view their own workspace
-- Owners can update their workspace
+#### Companies
+- Users can view their own company
+- Owners can update their company
 
 #### Plans
 - Anyone can view active plans (for pricing page)
 
 #### Subscriptions
-- Users can view their workspace's subscription
+- Users can view their company's subscription
 - Owners can manage subscriptions
+
+#### Invitations
+- Owners can create and update invitations for their company
+- Owners can view company invitations
 
 ---
 
@@ -243,31 +262,31 @@ summit/
 │   ├── (auth)/            # Auth routes (sign-in, sign-up, etc.)
 │   ├── (app)/             # Protected app routes (dashboard, settings, etc.)
 │   ├── api/               # API routes
-│   │   └── webhooks/      # Mollie webhooks - TO BUILD
+│   │   └── webhooks/      # External webhook endpoints
 │   ├── globals.css        # Global styles
 │   ├── layout.tsx         # Root layout
 │   └── page.tsx           # Homepage
 ├── components/
 │   ├── ui/                # shadcn/ui components (install on-demand)
-│   ├── auth/              # Auth-specific components - TO BUILD
-│   ├── billing/           # Billing/subscription components - TO BUILD
-│   ├── summit/            # Custom domain components - TO BUILD LATER
-│   └── layout/            # Layout components (nav, sidebar) - TO BUILD
+│   ├── auth/              # Auth-specific components
+│   ├── billing/           # Billing/subscription components
+│   ├── summit/            # Custom Summit domain components
+│   └── layout/            # Layout components (nav, sidebar)
 ├── lib/
 │   ├── supabase/
-│   │   ├── server.ts      # ✅ DONE - Server-side client (async)
-│   │   └── client.ts      # ✅ DONE - Browser client
-│   ├── auth/              # Auth helpers - TO BUILD
-│   ├── subscriptions/     # Subscription helpers - TO BUILD
-│   ├── mollie/            # Mollie client - TO BUILD
-│   └── utils.ts           # ✅ DONE - cn() helper (from shadcn)
+│   │   ├── server.ts      # Server-side client (async)
+│   │   └── client.ts      # Browser client
+│   ├── auth/              # Auth helpers
+│   ├── subscriptions/     # Subscription helpers
+│   ├── mollie/            # Mollie client
+│   └── utils.ts           # Shared utility helpers
 ├── types/
-│   └── database.ts        # ✅ DONE - Generated from Supabase
-├── hooks/                 # Custom React hooks - TO BUILD AS NEEDED
-├── middleware.ts          # ✅ DONE - Session refresh (has deprecation warning)
-├── .cursorrules           # ✅ DONE - Coding conventions
-├── .env.local             # ✅ DONE - Local env vars (not in git)
-└── .env.example           # ✅ DONE - Template (in git)
+│   └── database.ts        # Generated Supabase types
+├── hooks/                 # Custom React hooks
+├── middleware.ts          # Session refresh middleware
+├── .cursorrules           # Coding conventions
+├── .env.local             # Local env vars (not in git)
+└── .env.example           # Environment template (in git)
 ```
 
 ---
@@ -302,78 +321,6 @@ INVITE_EXPIRY_HOURS=168
 - Only use anon key in browser
 - Mollie keys will be added when we integrate payments
 - Invitation emails are sent from server-side actions via Resend
-
----
-
-## What We've Completed (Sprint 0 Progress)
-
-### ✅ Development Environment
-- [x] GitHub repository with main/develop branches
-- [x] Next.js 16 with TypeScript (strict) and Tailwind
-- [x] shadcn/ui initialized (components to be added on-demand)
-- [x] Prettier configured
-- [x] ESLint configured
-- [x] Cursor IDE settings configured
-- [x] `.cursorrules` file created
-
-### ✅ Database & Types
-- [x] Supabase project created
-- [x] Database schema designed and implemented
-- [x] RLS policies created
-- [x] Database triggers created (auto-create workspace/profile)
-- [x] TypeScript types generated from schema
-- [x] Initial plans seeded (Summit Pro monthly/yearly)
-
-### ✅ Supabase Integration
-- [x] Server-side client (`lib/supabase/server.ts`) - async for Next.js 16
-- [x] Browser client (`lib/supabase/client.ts`)
-- [x] Middleware for session refresh (`middleware.ts`)
-- [x] Database connection tested and working
-
-### ⏳ Still To Build (Rest of Sprint 0)
-
-#### 1. Authentication System (NEXT - HIGH PRIORITY)
-- [ ] Sign up flow with email verification
-- [ ] Sign in page
-- [ ] Sign out functionality
-- [ ] Password reset flow
-- [ ] Email verification handling
-- [ ] Auth helper functions (`lib/auth/helpers.ts`)
-- [ ] Protected route patterns
-
-#### 2. User Profile Management
-- [x] Profile page (view/edit)
-- [x] Avatar upload + removal (Supabase Storage)
-- [x] Profile editing form
-
-#### 3. Workspace System
-- [ ] Workspace context/provider (for switching/displaying current workspace)
-- [ ] Workspace settings page
-- [ ] Member invitation system (owner only)
-- [ ] Member management UI (owner only)
-
-#### 4. Subscription & Billing
-- [ ] Mollie integration setup
-- [ ] Subscription checkout flow
-- [ ] Webhook handler (`app/api/webhooks/mollie/route.ts`)
-- [ ] Billing page (view subscription, payment history)
-- [ ] Subscription management (upgrade, cancel)
-- [ ] Access control based on workspace status
-
-#### 5. Security & Compliance
-- [ ] Security headers in `next.config.ts`
-- [ ] Terms of service page
-- [ ] Privacy policy page
-- [ ] Cookie consent banner (if needed for EU)
-- [ ] Data deletion endpoint (GDPR compliance)
-
-#### 6. Error Handling & Polish
-- [ ] Global error boundary (`app/error.tsx`)
-- [ ] Loading states (`app/loading.tsx`)
-- [ ] 404 page (`app/not-found.tsx`)
-- [ ] Toast notification system (use shadcn/ui toast)
-
----
 
 ## Coding Conventions (from `.cursorrules`)
 
@@ -439,6 +386,17 @@ When building, create actual files for:
 
 ---
 
+## Database Functions
+
+### `accept_invitation(invite_token, user_email)`
+- Validates the invitation token hash and expiry
+- Verifies session email against invitation email
+- Attaches the user profile to the target company
+- Marks invitation status as accepted
+- Returns status text (`accepted`, `already_accepted`, or invalid states)
+
+---
+
 ## Known Issues & Workarounds
 
 ### 1. Next.js 16 Middleware Deprecation Warning
@@ -457,104 +415,12 @@ When building, create actual files for:
 
 ---
 
-## Next Steps for Claude Code
-
-### Immediate Priority: Authentication System
-
-Build the complete authentication flow:
-
-1. **Create auth pages:**
-   - `app/(auth)/sign-up/page.tsx` - Sign up form
-   - `app/(auth)/sign-in/page.tsx` - Sign in form
-   - `app/(auth)/reset-password/page.tsx` - Password reset request
-   - `app/(auth)/update-password/page.tsx` - Set new password
-   - `app/(auth)/verify-email/page.tsx` - Email verification handler
-
-2. **Create auth helpers:**
-   - `lib/auth/helpers.ts` - getCurrentUser, requireAuth, requireOwner, etc.
-
-3. **Create auth components:**
-   - `components/auth/sign-up-form.tsx` - Sign up form with validation
-   - `components/auth/sign-in-form.tsx` - Sign in form
-   - `components/auth/reset-password-form.tsx` - Password reset form
-
-4. **Create protected route example:**
-   - `app/(app)/dashboard/page.tsx` - Dashboard landing page (protected)
-   - `app/(app)/layout.tsx` - Shared protected layout with nav
-
-5. **Add shadcn/ui components as needed:**
-   - `npx shadcn@latest add form` - For auth forms
-   - `npx shadcn@latest add input` - Form inputs
-   - `npx shadcn@latest add button` - Buttons
-   - `npx shadcn@latest add label` - Form labels
-   - `npx shadcn@latest add card` - Card containers
-   - `npx shadcn@latest add toast` - Notifications
-
-### Key Requirements for Auth System
-
-**Sign Up Flow:**
-1. User fills form (email, password, full_name)
-2. Create auth.user via Supabase Auth
-3. Trigger automatically creates workspace + profile (via DB trigger)
-4. Send verification email
-5. Redirect to "check your email" page
-
-**Sign In Flow:**
-1. User enters email/password
-2. Supabase Auth validates
-3. Set session cookies
-4. Redirect to /dashboard
-
-**Email Verification:**
-1. User clicks link in email
-2. Supabase verifies email
-3. Trial period starts (14 days)
-4. Redirect to /dashboard
-
-**Password Reset:**
-1. User requests reset
-2. Email sent with reset link
-3. User sets new password
-4. Redirect to /sign-in
-
----
-
-## Testing Checklist
-
-Before moving to next phase, verify:
-
-### Authentication
-- [ ] Can sign up with email/password
-- [ ] Receive verification email
-- [ ] Email verification works
-- [ ] Can sign in after verification
-- [ ] Can sign out
-- [ ] Can request password reset
-- [ ] Can set new password
-- [ ] Protected routes redirect unauthenticated users
-- [ ] Session persists across page reloads
-
-### Database
-- [ ] Company auto-created on signup
-- [ ] Profile auto-created with correct role (owner)
-- [ ] Trial period set to 14 days
-- [ ] RLS policies work (can only see own company data)
-
-### UI/UX
-- [ ] Forms validate inputs
-- [ ] Error messages display clearly
-- [ ] Loading states show during async operations
-- [ ] Toast notifications work for success/error
-- [ ] Redirects work correctly
-
----
-
 ## References
 
 ### Documentation Files
-- Sprint 0 Technical Foundation: `/docs/sprint-0-technical-foundation.md`
+- Sprint 0 Overview: `/docs/sprint-0-overview.md`
 - Summit Features Specification: `/docs/summit-features-specification.md`
-- Database Schema: `/docs/database-schema.md` (to be created)
+- Database Schema: `/docs/database-schema.md`
 
 ### External Resources
 - Supabase Auth Docs: https://supabase.com/docs/guides/auth
@@ -569,9 +435,9 @@ Before moving to next phase, verify:
 
 If you need clarification on any architectural decision or pattern:
 
-1. **Workspace model:** One user = one workspace (email is unique globally)
+1. **Company model:** One user = one company (email is unique globally)
 2. **Roles:** Owner vs Member (members have full data access)
-3. **Subscription:** Per workspace, not per user
+3. **Subscription:** Per company, not per user
 4. **Trial:** 14 days, starts after email verification
 5. **Version 1 scope:** Fixed-bid projects with milestones ONLY
 
