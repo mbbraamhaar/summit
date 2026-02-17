@@ -1,13 +1,10 @@
 import { getResendClient, getResendFromEmail } from '@/lib/email/resend'
 
-type InvitationEmailVariant = 'new-invite' | 'reactivated'
-
 interface SendInvitationEmailParams {
   toEmail: string
   companyName: string
   inviteUrl: string
   expiresAt: string
-  variant: InvitationEmailVariant
 }
 
 interface SendMemberRemovedEmailParams {
@@ -15,16 +12,7 @@ interface SendMemberRemovedEmailParams {
   companyName: string
 }
 
-function buildInvitationCopy(variant: InvitationEmailVariant) {
-  if (variant === 'reactivated') {
-    return {
-      subjectPrefix: 'Your access has been restored to',
-      heading: 'Your workspace access has been restored',
-      intro: 'Sign in to rejoin your team workspace in Summit.',
-      ctaLabel: 'Sign in to continue',
-    }
-  }
-
+function buildInvitationCopy() {
   return {
     subjectPrefix: 'Invitation to join',
     heading: 'You are invited to join',
@@ -37,9 +25,8 @@ function buildInvitationHtml({
   companyName,
   inviteUrl,
   expiresAt,
-  variant,
 }: Omit<SendInvitationEmailParams, 'toEmail'>) {
-  const copy = buildInvitationCopy(variant)
+  const copy = buildInvitationCopy()
 
   return `
     <div style="font-family: Arial, sans-serif; line-height: 1.5; color: #111827;">
@@ -67,18 +54,17 @@ export async function sendInvitationEmail({
   companyName,
   inviteUrl,
   expiresAt,
-  variant,
 }: SendInvitationEmailParams) {
   try {
     const resend = getResendClient()
     const from = getResendFromEmail()
-    const copy = buildInvitationCopy(variant)
+    const copy = buildInvitationCopy()
 
     const { error } = await resend.emails.send({
       from,
       to: toEmail,
       subject: `${copy.subjectPrefix} ${companyName} on Summit`,
-      html: buildInvitationHtml({ companyName, inviteUrl, expiresAt, variant }),
+      html: buildInvitationHtml({ companyName, inviteUrl, expiresAt }),
       text: [
         `${copy.heading} ${companyName} on Summit.`,
         `${copy.intro}`,

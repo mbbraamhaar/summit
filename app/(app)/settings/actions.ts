@@ -1,7 +1,7 @@
 'use server'
 
-import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { getProfileOrRedirect } from '@/lib/auth/require-profile'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { createHash, randomBytes } from 'crypto'
@@ -24,67 +24,13 @@ const removeMemberSchema = z.object({
   memberId: z.string().uuid('Invalid member id'),
 })
 
-async function authUserExistsByEmail(email: string) {
-  const admin = createAdminClient()
-  const loweredEmail = email.toLowerCase()
-
-  const maybeGetUserByEmail = (
-    admin.auth.admin as unknown as {
-      getUserByEmail?: (targetEmail: string) => Promise<{ data: { user: { id: string } | null }; error: { message: string } | null }>
-    }
-  ).getUserByEmail
-
-  if (typeof maybeGetUserByEmail === 'function') {
-    const { data, error } = await maybeGetUserByEmail(loweredEmail)
-    if (error) {
-      throw new Error(error.message)
-    }
-    return Boolean(data.user)
-  }
-
-  let page = 1
-  const perPage = 200
-  const maxPages = 50
-
-  while (page <= maxPages) {
-    const { data, error } = await admin.auth.admin.listUsers({ page, perPage })
-    if (error) {
-      throw new Error(error.message)
-    }
-
-    if (data.users.some((candidate) => candidate.email?.toLowerCase() === loweredEmail)) {
-      return true
-    }
-
-    if (data.users.length < perPage) {
-      break
-    }
-
-    page += 1
-  }
-
-  return false
+function isAlreadyDeletedAuthUserError(error: { message?: string } | null) {
+  const message = error?.message?.toLowerCase() ?? ''
+  return message.includes('user not found')
 }
 
 export async function updateCompany(formData: FormData) {
-  const supabase = await createClient()
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-  if (!user) {
-    return { success: false, error: 'Unauthorized' }
-  }
-
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('role, company_id')
-    .eq('id', user.id)
-    .single()
-
-  if (!profile) {
-    return { success: false, error: 'Profile not found' }
-  }
+  const { supabase, profile } = await getProfileOrRedirect()
 
   if (profile.role !== 'owner') {
     return { success: false, error: 'Only owners can edit company settings' }
@@ -133,26 +79,9 @@ export async function updateCompany(formData: FormData) {
 }
 
 export async function deleteCompany(formData: FormData) {
-  const supabase = await createClient()
+  const { supabase, profile } = await getProfileOrRedirect()
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-  if (!user) {
-    return { success: false, error: 'Unauthorized' }
-  }
-
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select(`
-      role,
-      company_id,
-      company:companies(name)
-    `)
-    .eq('id', user.id)
-    .single()
-
-  if (!profile || !profile.company) {
+  if (!profile.company) {
     return { success: false, error: 'Profile or company not found' }
   }
 
@@ -184,28 +113,9 @@ export async function deleteCompany(formData: FormData) {
 }
 
 export async function createInvitation(formData: FormData) {
-  const supabase = await createClient()
+  const { supabase, user, profile: ownerProfile } = await getProfileOrRedirect()
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-
-  if (!user) {
-    return { success: false, error: 'Unauthorized' }
-  }
-
-  const { data: ownerProfile } = await supabase
-    .from('profiles')
-    .select(`
-      id,
-      role,
-      company_id,
-      company:companies(name)
-    `)
-    .eq('id', user.id)
-    .single()
-
-  if (!ownerProfile || !ownerProfile.company) {
+  if (!ownerProfile.company) {
     return { success: false, error: 'Profile or company not found' }
   }
 
@@ -235,17 +145,6 @@ export async function createInvitation(formData: FormData) {
 
   if (existingMember) {
     return { success: false, error: 'This user is already a member of your company' }
-  }
-
-  let hasAuthAccount = false
-
-  try {
-    hasAuthAccount = await authUserExistsByEmail(email)
-  } catch (error) {
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : 'Failed to process invitation',
-    }
   }
 
   const { error: revokePendingError } = await supabase
@@ -294,7 +193,6 @@ export async function createInvitation(formData: FormData) {
     companyName: ownerProfile.company.name,
     inviteUrl,
     expiresAt,
-    variant: hasAuthAccount ? 'reactivated' : 'new-invite',
   })
 
   if (!emailResult.success) {
@@ -309,29 +207,7 @@ export async function createInvitation(formData: FormData) {
 }
 
 export async function revokeInvitation(formData: FormData) {
-  const supabase = await createClient()
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-
-  if (!user) {
-    return { success: false, error: 'Unauthorized' }
-  }
-
-  const { data: ownerProfile } = await supabase
-    .from('profiles')
-    .select(`
-      role,
-      company_id,
-      company:companies(name)
-    `)
-    .eq('id', user.id)
-    .single()
-
-  if (!ownerProfile) {
-    return { success: false, error: 'Profile not found' }
-  }
+  const { supabase, profile: ownerProfile } = await getProfileOrRedirect()
 
   if (ownerProfile.role !== 'owner') {
     return { success: false, error: 'Only owners can revoke invitations' }
@@ -368,29 +244,8 @@ export async function revokeInvitation(formData: FormData) {
 }
 
 export async function removeMember(formData: FormData) {
-  const supabase = await createClient()
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-
-  if (!user) {
-    return { success: false, error: 'Unauthorized' }
-  }
-
-  const { data: ownerProfile } = await supabase
-    .from('profiles')
-    .select(`
-      role,
-      company_id,
-      company:companies(name)
-    `)
-    .eq('id', user.id)
-    .single()
-
-  if (!ownerProfile) {
-    return { success: false, error: 'Profile not found' }
-  }
+  const { supabase, user, profile: ownerProfile } = await getProfileOrRedirect()
+  const admin = createAdminClient()
 
   if (ownerProfile.role !== 'owner') {
     return { success: false, error: 'Only owners can remove members' }
@@ -418,21 +273,32 @@ export async function removeMember(formData: FormData) {
   }
 
   if (!memberToRemove) {
-    return { success: false, error: 'Member not found' }
+    const { error: deleteAuthUserError } = await admin.auth.admin.deleteUser(validation.data.memberId)
+    if (deleteAuthUserError && !isAlreadyDeletedAuthUserError(deleteAuthUserError)) {
+      console.error('Unexpected error deleting missing auth user', {
+        actorId: user.id,
+        memberId: validation.data.memberId,
+        message: deleteAuthUserError.message,
+      })
+      throw new Error(deleteAuthUserError.message)
+    }
+    revalidatePath('/settings')
+    return { success: true }
   }
 
   if (memberToRemove.role === 'owner') {
     return { success: false, error: 'Owners cannot be removed' }
   }
 
-  const { error: deleteError } = await supabase
-    .from('profiles')
-    .delete()
-    .eq('id', validation.data.memberId)
-    .eq('company_id', ownerProfile.company_id)
+  const { error: deleteAuthUserError } = await admin.auth.admin.deleteUser(validation.data.memberId)
 
-  if (deleteError) {
-    return { success: false, error: deleteError.message }
+  if (deleteAuthUserError && !isAlreadyDeletedAuthUserError(deleteAuthUserError)) {
+    console.error('Unexpected error deleting auth user', {
+      actorId: user.id,
+      memberId: validation.data.memberId,
+      message: deleteAuthUserError.message,
+    })
+    throw new Error(deleteAuthUserError.message)
   }
 
   const companyName = ownerProfile.company?.name || 'your workspace'
