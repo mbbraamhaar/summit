@@ -9,7 +9,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Input } from '@/components/ui/input'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { toast } from 'sonner'
-import { createInvitation, removeMember, revokeInvitation } from '@/app/(app)/settings/actions'
+import { createInvitation, removeMember, resendInvitation, revokeInvitation } from '@/app/(app)/settings/actions'
 
 type Profile = Tables<'profiles'>
 type Invitation = Pick<Tables<'invitations'>, 'id' | 'email' | 'status' | 'expires_at' | 'created_at'>
@@ -43,8 +43,10 @@ export function MembersTab({
   userRole,
 }: MembersTabProps) {
   const isOwner = userRole === 'owner'
+  const [renderedAtMs] = useState(() => Date.now())
   const [inviteEmail, setInviteEmail] = useState('')
   const [isInviting, setIsInviting] = useState(false)
+  const [resendingId, setResendingId] = useState<string | null>(null)
   const [revokingId, setRevokingId] = useState<string | null>(null)
   const [memberToRemove, setMemberToRemove] = useState<Profile | null>(null)
   const [isRemovingMember, setIsRemovingMember] = useState(false)
@@ -60,6 +62,10 @@ export function MembersTab({
     setIsInviting(false)
 
     if (!result.success) {
+      if (result.error === 'WORKSPACE_READ_ONLY') {
+        toast.error('Workspace is read-only.')
+        return
+      }
       toast.error('Failed to send invitation', {
         description: result.error || 'Please try again.',
       })
@@ -68,6 +74,29 @@ export function MembersTab({
 
     setInviteEmail('')
     toast.success('Invitation sent')
+  }
+
+  async function handleResend(invitationId: string) {
+    if (!isOwner) return
+
+    setResendingId(invitationId)
+    const formData = new FormData()
+    formData.append('invitationId', invitationId)
+    const result = await resendInvitation(formData)
+    setResendingId(null)
+
+    if (!result.success) {
+      if (result.error === 'WORKSPACE_READ_ONLY') {
+        toast.error('Workspace is read-only.')
+        return
+      }
+      toast.error('Failed to resend invitation', {
+        description: result.error || 'Please try again.',
+      })
+      return
+    }
+
+    toast.success('Invitation resent')
   }
 
   async function handleRevoke(invitationId: string) {
@@ -80,6 +109,10 @@ export function MembersTab({
     setRevokingId(null)
 
     if (!result.success) {
+      if (result.error === 'WORKSPACE_READ_ONLY') {
+        toast.error('Workspace is read-only.')
+        return
+      }
       toast.error('Failed to revoke invitation', {
         description: result.error || 'Please try again.',
       })
@@ -100,6 +133,10 @@ export function MembersTab({
     setIsRemovingMember(false)
 
     if (!result.success) {
+      if (result.error === 'WORKSPACE_READ_ONLY') {
+        toast.error('Workspace is read-only.')
+        return
+      }
       toast.error('Failed to remove member', {
         description: result.error || 'Please try again.',
       })
@@ -156,28 +193,49 @@ export function MembersTab({
                 <p className="text-sm text-muted-foreground">No pending invitations</p>
               ) : (
                 <div className="space-y-2">
-                  {pendingInvitations.map((invitation) => (
-                    <div
-                      key={invitation.id}
-                      className="flex items-center justify-between rounded-md border px-3 py-2"
-                    >
-                      <div className="space-y-1">
-                        <p className="text-sm font-medium">{invitation.email}</p>
-                        <p className="text-xs text-muted-foreground">
-                          Expires {new Date(invitation.expires_at).toLocaleDateString()}
-                        </p>
-                      </div>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        onClick={() => handleRevoke(invitation.id)}
-                        disabled={revokingId === invitation.id}
+                  {pendingInvitations.map((invitation) => {
+                    const isExpired = invitation.status === 'pending'
+                      && Date.parse(invitation.expires_at) < renderedAtMs
+
+                    return (
+                      <div
+                        key={invitation.id}
+                        className="flex items-center justify-between rounded-md border px-3 py-2"
                       >
-                        {revokingId === invitation.id ? 'Revoking...' : 'Revoke'}
-                      </Button>
-                    </div>
-                  ))}
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            <p className="text-sm font-medium">{invitation.email}</p>
+                            <Badge variant={isExpired ? 'destructive' : 'secondary'}>
+                              {isExpired ? 'Expired' : 'Pending'}
+                            </Badge>
+                          </div>
+                          <p className="text-xs text-muted-foreground">
+                            Expires {new Date(invitation.expires_at).toLocaleString()}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleResend(invitation.id)}
+                            disabled={resendingId === invitation.id || revokingId === invitation.id}
+                          >
+                            {resendingId === invitation.id ? 'Resending...' : 'Resend'}
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleRevoke(invitation.id)}
+                            disabled={revokingId === invitation.id || resendingId === invitation.id}
+                          >
+                            {revokingId === invitation.id ? 'Revoking...' : 'Revoke'}
+                          </Button>
+                        </div>
+                      </div>
+                    )
+                  })}
                 </div>
               )}
             </div>

@@ -31,6 +31,10 @@ export default async function SignInPage({
           <p className="mb-4 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
             Your access was removed. Please sign in again if you were re-invited.
           </p>
+        ) : reason === 'email_change' ? (
+          <p className="mb-4 rounded-md border border-primary/30 bg-primary/10 px-3 py-2 text-sm text-foreground">
+            Sign in to complete your email change verification.
+          </p>
         ) : null}
         <SignInForm redirectTo={redirectTo} initialEmail={email} />
         <div className="text-sm text-center text-muted-foreground mt-4 space-y-2">

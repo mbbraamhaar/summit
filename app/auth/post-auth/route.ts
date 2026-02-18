@@ -20,9 +20,7 @@ export async function GET(request: NextRequest) {
   }
 
   if (inviteToken) {
-    const inviteAcceptUrl = new URL('/invite/accept', request.url)
-    inviteAcceptUrl.searchParams.set('token', inviteToken)
-    return NextResponse.redirect(inviteAcceptUrl)
+    return NextResponse.redirect(new URL('/invite/accept', request.url))
   }
 
   return NextResponse.redirect(new URL(fallbackRedirect, request.url))

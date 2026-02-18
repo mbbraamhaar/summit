@@ -5,7 +5,14 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import * as z from 'zod'
 import { toast } from 'sonner'
-import { removeAvatar, updateProfile, uploadAvatar } from '@/app/(app)/profile/actions'
+import {
+  cancelEmailChange,
+  removeAvatar,
+  requestEmailChange,
+  resendEmailChangeVerification,
+  updateProfile,
+  uploadAvatar,
+} from '@/app/(app)/profile/actions'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import {
   AVATAR_ALLOWED_MIME_TYPES,
@@ -17,6 +24,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
+import { type CompanyAccessMode } from '@/lib/subscriptions/helpers'
 
 const profileSchema = z.object({
   fullName: z
@@ -31,17 +39,35 @@ type ProfileFormData = z.infer<typeof profileSchema>
 interface ProfileFormProps {
   fullName: string | null
   email: string
+  pendingEmail: string | null
   role: string
   avatarUrl: string | null
+  accessMode: CompanyAccessMode
+  emailChangeStatus?: string
 }
 
-export function ProfileForm({ fullName, email, role, avatarUrl }: ProfileFormProps) {
+export function ProfileForm({
+  fullName,
+  email,
+  pendingEmail,
+  role,
+  avatarUrl,
+  accessMode,
+  emailChangeStatus,
+}: ProfileFormProps) {
   const [isSaving, setIsSaving] = useState(false)
+  const [currentEmail] = useState(email)
+  const [currentPendingEmail, setCurrentPendingEmail] = useState(pendingEmail)
+  const [emailInput, setEmailInput] = useState(pendingEmail ?? '')
+  const [isRequestingEmailChange, setIsRequestingEmailChange] = useState(false)
+  const [isResendingEmailChange, setIsResendingEmailChange] = useState(false)
+  const [isCancellingEmailChange, setIsCancellingEmailChange] = useState(false)
   const [currentAvatarUrl, setCurrentAvatarUrl] = useState(avatarUrl)
   const [selectedAvatarFile, setSelectedAvatarFile] = useState<File | null>(null)
   const [isUploading, setIsUploading] = useState(false)
   const [isRemovingAvatar, setIsRemovingAvatar] = useState(false)
   const [avatarFileError, setAvatarFileError] = useState<string | null>(null)
+  const isReadOnly = accessMode === 'read_only'
 
   const {
     register,
@@ -64,6 +90,10 @@ export function ProfileForm({ fullName, email, role, avatarUrl }: ProfileFormPro
     setIsSaving(false)
 
     if (!result.success) {
+      if (result.error === 'WORKSPACE_READ_ONLY') {
+        toast.error('Workspace is read-only.')
+        return
+      }
       toast.error('Failed to update profile', {
         description: result.error ?? 'Please try again.',
       })
@@ -87,6 +117,10 @@ export function ProfileForm({ fullName, email, role, avatarUrl }: ProfileFormPro
     setIsUploading(false)
 
     if (!result.success) {
+      if (result.error === 'WORKSPACE_READ_ONLY') {
+        toast.error('Workspace is read-only.')
+        return
+      }
       toast.error('Failed to upload avatar', {
         description: result.error ?? 'Please try again.',
       })
@@ -108,6 +142,10 @@ export function ProfileForm({ fullName, email, role, avatarUrl }: ProfileFormPro
     setIsRemovingAvatar(false)
 
     if (!result.success) {
+      if (result.error === 'WORKSPACE_READ_ONLY') {
+        toast.error('Workspace is read-only.')
+        return
+      }
       toast.error('Failed to remove avatar', {
         description: result.error ?? 'Please try again.',
       })
@@ -118,6 +156,74 @@ export function ProfileForm({ fullName, email, role, avatarUrl }: ProfileFormPro
     setSelectedAvatarFile(null)
     setAvatarFileError(null)
     toast.success('Avatar removed')
+  }
+
+  async function onRequestEmailChange() {
+    if (isRequestingEmailChange) {
+      return
+    }
+
+    setIsRequestingEmailChange(true)
+    const formData = new FormData()
+    formData.append('email', emailInput)
+
+    const result = await requestEmailChange(formData)
+    setIsRequestingEmailChange(false)
+
+    if (!result.success) {
+      toast.error('Failed to request email change', {
+        description: result.error ?? 'Please try again.',
+      })
+      return
+    }
+
+    const nextPendingEmail = result.pendingEmail ?? emailInput.trim().toLowerCase()
+    setCurrentPendingEmail(nextPendingEmail)
+    setEmailInput(nextPendingEmail)
+
+    toast.success('Verification email sent', {
+      description: `Check ${nextPendingEmail} to confirm this change.`,
+    })
+  }
+
+  async function onResendEmailChangeVerification() {
+    if (isResendingEmailChange) {
+      return
+    }
+
+    setIsResendingEmailChange(true)
+    const result = await resendEmailChangeVerification()
+    setIsResendingEmailChange(false)
+
+    if (!result.success) {
+      toast.error('Failed to resend verification email', {
+        description: result.error ?? 'Please try again.',
+      })
+      return
+    }
+
+    toast.success('Verification email resent')
+  }
+
+  async function onCancelEmailChange() {
+    if (isCancellingEmailChange) {
+      return
+    }
+
+    setIsCancellingEmailChange(true)
+    const result = await cancelEmailChange()
+    setIsCancellingEmailChange(false)
+
+    if (!result.success) {
+      toast.error('Failed to cancel email change', {
+        description: result.error ?? 'Please try again.',
+      })
+      return
+    }
+
+    setCurrentPendingEmail(null)
+    setEmailInput('')
+    toast.success('Pending email change canceled')
   }
 
   function handleAvatarFileChange(file: File | null) {
@@ -149,7 +255,7 @@ export function ProfileForm({ fullName, email, role, avatarUrl }: ProfileFormPro
         <Button
           type="submit"
           form="profile-form"
-          disabled={!isDirty || isSaving}
+          disabled={isReadOnly || !isDirty || isSaving}
           className="w-full sm:w-auto"
         >
           {isSaving ? 'Saving...' : 'Save changes'}
@@ -170,7 +276,7 @@ export function ProfileForm({ fullName, email, role, avatarUrl }: ProfileFormPro
                 type="text"
                 placeholder="Your full name"
                 {...register('fullName')}
-                disabled={isSaving}
+                disabled={isReadOnly || isSaving}
               />
               {errors.fullName && (
                 <p className="text-sm text-destructive">{errors.fullName.message}</p>
@@ -178,11 +284,72 @@ export function ProfileForm({ fullName, email, role, avatarUrl }: ProfileFormPro
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
-              <Input id="email" type="email" value={email} disabled readOnly />
-              <p className="text-xs text-muted-foreground">
-                Email changes are not available yet.
-              </p>
+              <Label htmlFor="currentEmail">Current email</Label>
+              <Input id="currentEmail" type="email" value={currentEmail} disabled readOnly />
+
+              <Label htmlFor="newEmail">New email</Label>
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <Input
+                  id="newEmail"
+                  type="email"
+                  placeholder="you@example.com"
+                  value={emailInput}
+                  onChange={(event) => setEmailInput(event.target.value)}
+                  disabled={isRequestingEmailChange || isResendingEmailChange}
+                />
+                <Button
+                  type="button"
+                  onClick={onRequestEmailChange}
+                  disabled={isRequestingEmailChange || isResendingEmailChange || emailInput.trim().length === 0}
+                >
+                  {isRequestingEmailChange ? 'Sending...' : 'Send verification'}
+                </Button>
+              </div>
+
+              {currentPendingEmail && (
+                <div className="rounded-md border border-primary/30 bg-primary/10 px-3 py-2">
+                  <p className="text-sm">
+                    Pending change to <span className="font-medium">{currentPendingEmail}</span>.
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Click the verification link sent to that address to complete the update.
+                  </p>
+                  <Button
+                    type="button"
+                    variant="link"
+                    className="mt-1 h-auto p-0 text-xs"
+                    onClick={onResendEmailChangeVerification}
+                    disabled={isRequestingEmailChange || isResendingEmailChange || isCancellingEmailChange}
+                  >
+                    {isResendingEmailChange ? 'Resending...' : 'Resend verification email'}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="link"
+                    className="ml-3 mt-1 h-auto p-0 text-xs text-destructive hover:text-destructive/90"
+                    onClick={onCancelEmailChange}
+                    disabled={isRequestingEmailChange || isResendingEmailChange || isCancellingEmailChange}
+                  >
+                    {isCancellingEmailChange ? 'Cancelling...' : 'Cancel pending change'}
+                  </Button>
+                </div>
+              )}
+
+              {emailChangeStatus === 'success' && (
+                <p className="text-xs text-green-600">
+                  Email verified. Your account now uses the updated email address.
+                </p>
+              )}
+              {emailChangeStatus === 'pending' && (
+                <p className="text-xs text-muted-foreground">
+                  Verification is still pending. Check your inbox and click the latest link.
+                </p>
+              )}
+              {emailChangeStatus === 'invalid' && (
+                <p className="text-xs text-destructive">
+                  Verification link is invalid or expired. Request a new email change.
+                </p>
+              )}
             </div>
 
             <div className="space-y-2">
@@ -216,7 +383,7 @@ export function ProfileForm({ fullName, email, role, avatarUrl }: ProfileFormPro
               type="file"
               accept="image/png,image/jpeg,image/webp"
               onChange={(e) => handleAvatarFileChange(e.target.files?.[0] ?? null)}
-              disabled={isUploading}
+              disabled={isReadOnly || isUploading}
               aria-invalid={Boolean(avatarFileError)}
             />
             {avatarFileError && (
@@ -228,7 +395,7 @@ export function ProfileForm({ fullName, email, role, avatarUrl }: ProfileFormPro
             <Button
               type="button"
               onClick={onUploadAvatar}
-              disabled={!selectedAvatarFile || isUploading || isRemovingAvatar}
+              disabled={isReadOnly || !selectedAvatarFile || isUploading || isRemovingAvatar}
               className="w-full sm:w-auto"
             >
               {isUploading ? 'Uploading...' : 'Upload avatar'}
@@ -238,7 +405,7 @@ export function ProfileForm({ fullName, email, role, avatarUrl }: ProfileFormPro
                 type="button"
                 variant="outline"
                 onClick={onRemoveAvatar}
-                disabled={isUploading || isRemovingAvatar}
+                disabled={isReadOnly || isUploading || isRemovingAvatar}
                 className="w-full sm:w-auto"
               >
                 {isRemovingAvatar ? 'Removing...' : 'Remove avatar'}

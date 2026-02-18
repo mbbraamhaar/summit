@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { SettingsTabs } from '@/components/settings/settings-tabs'
+import { getCompanyEntitlement } from '@/lib/subscriptions/helpers'
 
 type SearchParams = Promise<{ [key: string]: string | string[] | undefined }>
 
@@ -54,6 +55,7 @@ export default async function SettingsPage({
 
   const params = await searchParams
   const activeTab = (params.tab as string) || 'company'
+  const entitlement = await getCompanyEntitlement(supabase, profile.company_id)
 
   return (
     <div className="container max-w-4xl py-8">
@@ -67,6 +69,7 @@ export default async function SettingsPage({
       <SettingsTabs
         activeTab={activeTab}
         company={profile.company}
+        companyAccessMode={entitlement.accessMode}
         userRole={profile.role}
         subscription={subscription}
         members={members || []}

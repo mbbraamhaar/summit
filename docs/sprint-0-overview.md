@@ -82,10 +82,10 @@ Sprint 0 establishes the core technical infrastructure for Summit: development e
 - [x] Seeded data (Summit Pro monthly/yearly plans)
 
 **Key Decisions:**
-- One company per user (email globally unique)
-- Owner vs Member roles (members have full data access)
-- 14-day trial period starting after email verification
-- Company status tracks: trial | active | past_due | suspended | canceled
+- Canonical tenancy and role model: `docs/development-context.md`
+- Canonical status gating and read-only rules: `docs/access-control-and-status-gating.md`
+- Canonical identity lifecycle rules: `docs/identity-and-auth.md`
+- Canonical billing/subscription authority principles: `docs/billing-and-tax-policy.md` and `docs/mollie-subscriptions.md`
 
 ---
 
@@ -332,25 +332,19 @@ By the end of Sprint 0, the following must work:
 
 ---
 
-## Key Architectural Decisions
+## Architecture Reference Links
 
-### Multi-Tenancy Model
-- **One company per user** - Email is globally unique
-- **Company isolation** - All queries filtered by company_id via RLS
-- **No multi-company** - Users cannot belong to multiple companies
+Sprint 0 follows the canonical architecture and policy docs below. This sprint file is status-oriented and not authoritative for rules:
 
-### Role Model
-- **Owner** - Full permissions (billing, member management, all data operations)
-- **Member** - Full data permissions (create/edit clients, projects, invoices) but no billing/member-management access
+- Tenancy model, role model, and cross-cutting decisions: `docs/development-context.md`
+- Access gating and status semantics: `docs/access-control-and-status-gating.md`
+- Identity and auth lifecycles: `docs/identity-and-auth.md`
+- Billing and tax policy: `docs/billing-and-tax-policy.md`
+- Mollie subscription lifecycle and webhook authority: `docs/mollie-subscriptions.md`
+- Invoice engine target architecture: `docs/invoice-engine-architecture.md`
+- Database schema and RLS reference: `docs/database-schema.md`
 
-### Trial & Subscription
-- **14-day trial** - Starts after email verification
-- **Per-company billing** - Subscription tied to company, not individual users
-- **One tier to start** - Summit Pro (€15/month or €150/year)
-- **Access control** - Read-only when `past_due`, `suspended`, or `canceled`
-- **Authoritative matrix** - `docs/development-context.md` → **Access Control Matrix (Authoritative)**
-
-### Next.js 16 Patterns
+### Next.js 16 Patterns (Implementation Guidance)
 - **Async cookies API** - Required for Next.js 16 (`await cookies()`)
 - **Server Components by default** - Add 'use client' only when needed
 - **Cookie-based sessions** - httpOnly cookies via @supabase/ssr
@@ -361,10 +355,14 @@ By the end of Sprint 0, the following must work:
 
 For detailed implementation guidance, see:
 
-- **`development-context.md`** - Current state, decisions, and context
-- **`database-schema.md`** - Complete database reference
-- **`cursor-prompt-authentication.md`** - Auth implementation guide (completed)
-- **Future:** cursor-prompt-profile.md, cursor-prompt-billing.md, etc.
+- `docs/development-context.md`
+- `docs/database-schema.md`
+- `docs/summit-features-specification.md`
+- `docs/identity-and-auth.md`
+- `docs/access-control-and-status-gating.md`
+- `docs/billing-and-tax-policy.md`
+- `docs/mollie-subscriptions.md`
+- `docs/invoice-engine-architecture.md`
 
 ---
 

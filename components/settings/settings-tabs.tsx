@@ -1,13 +1,15 @@
 'use client'
 
-import { useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import { Tables } from '@/types/database'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import { CompanyForm } from '@/components/settings/company-form'
 import { SubscriptionTab } from '@/components/settings/subscription-tab'
 import { MembersTab } from '@/components/settings/members-tab'
+import { type CompanyAccessMode } from '@/lib/subscriptions/helpers'
 
 type Company = Tables<'companies'>
 type Subscription = Tables<'subscriptions'> & {
@@ -19,6 +21,7 @@ type Invitation = Pick<Tables<'invitations'>, 'id' | 'email' | 'status' | 'expir
 interface SettingsTabsProps {
   activeTab: string
   company: Company
+  companyAccessMode: CompanyAccessMode
   userRole: string
   subscription: Subscription | null
   members: Profile[]
@@ -27,7 +30,6 @@ interface SettingsTabsProps {
 }
 
 interface CompanySaveState {
-  isOwner: boolean
   isDirty: boolean
   isSaving: boolean
 }
@@ -35,19 +37,28 @@ interface CompanySaveState {
 export function SettingsTabs({
   activeTab,
   company,
+  companyAccessMode,
   userRole,
   subscription,
   members,
   pendingInvitations,
   currentUserId,
 }: SettingsTabsProps) {
+  const [effectiveAccessMode, setEffectiveAccessMode] = useState<CompanyAccessMode>(companyAccessMode)
   const [companySaveState, setCompanySaveState] = useState<CompanySaveState>({
-    isOwner: userRole === 'owner',
     isDirty: false,
     isSaving: false,
   })
   const [requestCompanySave, setRequestCompanySave] = useState<(() => void) | null>(null)
+  const handleSaveRequestRegister = useCallback((save: (() => void) | null) => {
+    setRequestCompanySave(() => save)
+  }, [])
 
+  useEffect(() => {
+    setEffectiveAccessMode(companyAccessMode)
+  }, [companyAccessMode])
+
+  const isReadOnly = effectiveAccessMode === 'read_only'
   const showSaveButton = activeTab === 'company' && userRole === 'owner'
 
   return (
@@ -69,7 +80,7 @@ export function SettingsTabs({
           <Button
             type="button"
             onClick={() => requestCompanySave?.()}
-            disabled={!companySaveState.isDirty || companySaveState.isSaving || !requestCompanySave}
+            disabled={isReadOnly || !companySaveState.isDirty || companySaveState.isSaving || !requestCompanySave}
             className="w-full sm:w-auto sm:min-w-[160px]"
           >
             {companySaveState.isSaving ? (
@@ -84,12 +95,24 @@ export function SettingsTabs({
         )}
       </div>
 
+      {isReadOnly && (
+        <Alert>
+          <AlertDescription>
+            {company.status === 'canceled'
+              ? 'Workspace is closed (read-only).'
+              : 'Workspace is read-only.'}
+          </AlertDescription>
+        </Alert>
+      )}
+
       <TabsContent value="company" className="space-y-6">
         <CompanyForm
           company={company}
           userRole={userRole}
+          companyAccessMode={effectiveAccessMode}
+          onWorkspaceClosed={() => setEffectiveAccessMode('read_only')}
           onSaveStateChange={setCompanySaveState}
-          onSaveRequestRegister={setRequestCompanySave}
+          onSaveRequestRegister={handleSaveRequestRegister}
         />
       </TabsContent>
 

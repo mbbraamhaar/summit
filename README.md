@@ -81,6 +81,8 @@ Summit helps freelancers and small studios automate milestone-based billing for 
 
 ## Architecture Overview
 
+Authoritative architecture, identity, billing, and gating rules live in the docs listed in the Documentation section. The summary below is non-canonical.
+
 ### Multi-tenancy Model
 Summit uses a **single-company multi-tenancy model**:
 - Each company is an isolated tenant
@@ -91,7 +93,7 @@ Summit uses a **single-company multi-tenancy model**:
 ### Authorization Model
 Two role types:
 - **Owner**: Full permissions including billing, member management, company settings
-- **Member**: Can manage clients, projects, and invoices within company
+- **Member**: Full data permissions in the company (no billing/member-management access)
 
 ### Security
 - Row-level security (RLS) on all tables
@@ -121,10 +123,15 @@ npx shadcn@latest add [component-name]
 
 ## Documentation
 
-- [Sprint 0: Technical Foundation](./docs/sprint-0-technical-foundation.md)
+- [Development Context (Authority Map)](./docs/development-context.md)
+- [Database Schema](./docs/database-schema.md)
 - [Feature Specification](./docs/summit-features-specification.md)
-- Database Schema (coming soon)
-- API Documentation (coming soon)
+- [Identity and Auth](./docs/identity-and-auth.md)
+- [Access Control and Status Gating](./docs/access-control-and-status-gating.md)
+- [Billing and Tax Policy](./docs/billing-and-tax-policy.md)
+- [Mollie Subscriptions](./docs/mollie-subscriptions.md)
+- [Invoice Engine Architecture](./docs/invoice-engine-architecture.md)
+- [Sprint 0 Overview](./docs/sprint-0-overview.md)
 
 ## License
 

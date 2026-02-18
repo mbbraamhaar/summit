@@ -9,7 +9,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { CountryCombobox } from '@/components/settings/country-combobox'
-import { updateCompany, deleteCompany } from '@/app/(app)/settings/actions'
+import { updateCompany, closeWorkspace } from '@/app/(app)/settings/actions'
+import { type CompanyAccessMode } from '@/lib/subscriptions/helpers'
+import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { Loader2, AlertCircle } from 'lucide-react'
 
@@ -31,28 +33,26 @@ type CompanyField = keyof CompanyFormData
 
 const REQUIRED_FIELDS: CompanyField[] = [
   'name',
-  'tax_id',
-  'address_line1',
-  'city',
-  'postal_code',
-  'country',
-  'bank_account_name',
-  'bank_account_number',
 ]
 
 interface CompanyFormProps {
   company: Company
   userRole: string
-  onSaveStateChange?: (state: { isOwner: boolean; isDirty: boolean; isSaving: boolean }) => void
+  companyAccessMode: CompanyAccessMode
+  onWorkspaceClosed?: () => void
+  onSaveStateChange?: (state: { isDirty: boolean; isSaving: boolean }) => void
   onSaveRequestRegister?: (save: (() => void) | null) => void
 }
 
 export function CompanyForm({
   company,
   userRole,
+  companyAccessMode,
+  onWorkspaceClosed,
   onSaveStateChange,
   onSaveRequestRegister,
 }: CompanyFormProps) {
+  const router = useRouter()
   const [formData, setFormData] = useState<CompanyFormData>({
     name: company.name || '',
     company_registration_id: company.company_registration_id || '',
@@ -70,12 +70,15 @@ export function CompanyForm({
   const [isDirty, setIsDirty] = useState(false)
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<CompanyField, string>>>({})
   const [isSaving, setIsSaving] = useState(false)
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
-  const [deleteConfirmName, setDeleteConfirmName] = useState('')
-  const [isDeleting, setIsDeleting] = useState(false)
+  const [closeDialogOpen, setCloseDialogOpen] = useState(false)
+  const [closeConfirmation, setCloseConfirmation] = useState('')
+  const [isClosing, setIsClosing] = useState(false)
+  const [effectiveAccessMode, setEffectiveAccessMode] = useState<CompanyAccessMode>(companyAccessMode)
   
   const initialDataRef = useRef(formData)
   const isOwner = userRole === 'owner'
+  const isReadOnly = effectiveAccessMode === 'read_only'
+  const canEdit = isOwner && !isReadOnly
   
   // Check if form is dirty
   useEffect(() => {
@@ -86,8 +89,12 @@ export function CompanyForm({
   }, [formData])
 
   useEffect(() => {
-    onSaveStateChange?.({ isOwner, isDirty, isSaving })
-  }, [isOwner, isDirty, isSaving, onSaveStateChange])
+    setEffectiveAccessMode(companyAccessMode)
+  }, [companyAccessMode])
+
+  useEffect(() => {
+    onSaveStateChange?.({ isDirty: canEdit ? isDirty : false, isSaving })
+  }, [canEdit, isDirty, isSaving, onSaveStateChange])
   
   // Handle field change
   const handleFieldChange = (field: CompanyField, value: string) => {
@@ -111,7 +118,7 @@ export function CompanyForm({
   
   // Save all changes
   const handleSaveAll = useCallback(async () => {
-    if (!isOwner || !isDirty || isSaving) return
+    if (!canEdit || !isDirty || isSaving) return
 
     const nextErrors = validateRequiredFields(formData)
     setFieldErrors(nextErrors)
@@ -137,9 +144,13 @@ export function CompanyForm({
       
       toast.success('Changes saved')
     } else {
+      if (result.error === 'WORKSPACE_READ_ONLY') {
+        toast.error('Workspace is read-only.')
+        return
+      }
       toast.error(result.error || 'Failed to save changes')
     }
-  }, [formData, isDirty, isOwner, isSaving])
+  }, [canEdit, formData, isDirty, isSaving])
 
   useEffect(() => {
     onSaveRequestRegister?.(() => {
@@ -148,22 +159,33 @@ export function CompanyForm({
     return () => onSaveRequestRegister?.(null)
   }, [handleSaveAll, onSaveRequestRegister])
   
-  // Delete company
-  const handleDeleteCompany = async () => {
-    if (!isOwner) return
-    
-    setIsDeleting(true)
-    
+  const handleCloseWorkspace = async () => {
+    if (!isOwner || isReadOnly) return
+
+    setIsClosing(true)
+
     const formDataToSend = new FormData()
-    formDataToSend.append('companyName', deleteConfirmName)
-    
-    const result = await deleteCompany(formDataToSend)
-    
+    formDataToSend.append('confirmation', closeConfirmation)
+
+    const result = await closeWorkspace(formDataToSend)
+
+    setIsClosing(false)
+
     if (!result.success) {
-      setIsDeleting(false)
-      toast.error(result.error || 'Failed to delete company')
+      if (result.error === 'WORKSPACE_READ_ONLY') {
+        toast.error('Workspace is read-only.')
+        return
+      }
+      toast.error(result.error || 'Failed to close workspace')
+      return
     }
-    // If successful, redirect happens in server action
+
+    setCloseDialogOpen(false)
+    setCloseConfirmation('')
+    setEffectiveAccessMode('read_only')
+    onWorkspaceClosed?.()
+    toast.success('Workspace closed. It is now read-only.')
+    router.refresh()
   }
   
   return (
@@ -173,6 +195,15 @@ export function CompanyForm({
           <AlertCircle className="h-4 w-4" />
           <AlertDescription>
             Only owners can edit company settings
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {isReadOnly && (
+        <Alert>
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>
+            Workspace is read-only. Data is preserved.
           </AlertDescription>
         </Alert>
       )}
@@ -192,7 +223,7 @@ export function CompanyForm({
               value={formData.name}
               onChange={(e) => handleFieldChange('name', e.target.value)}
               aria-invalid={Boolean(fieldErrors.name)}
-              disabled={!isOwner}
+              disabled={!canEdit}
               required
             />
             {fieldErrors.name && (
@@ -206,19 +237,18 @@ export function CompanyForm({
               id="company_registration_id"
               value={formData.company_registration_id}
               onChange={(e) => handleFieldChange('company_registration_id', e.target.value)}
-              disabled={!isOwner}
+              disabled={!canEdit}
             />
           </div>
           
           <div className="space-y-2">
-            <Label htmlFor="tax_id">Tax ID *</Label>
+            <Label htmlFor="tax_id">Tax ID</Label>
             <Input
               id="tax_id"
               value={formData.tax_id}
               onChange={(e) => handleFieldChange('tax_id', e.target.value)}
               aria-invalid={Boolean(fieldErrors.tax_id)}
-              disabled={!isOwner}
-              required
+              disabled={!canEdit}
             />
             {fieldErrors.tax_id && (
               <p className="text-sm text-destructive">{fieldErrors.tax_id}</p>
@@ -236,14 +266,13 @@ export function CompanyForm({
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="address_line1">Address line 1 *</Label>
+            <Label htmlFor="address_line1">Address line 1</Label>
             <Input
               id="address_line1"
               value={formData.address_line1}
               onChange={(e) => handleFieldChange('address_line1', e.target.value)}
               aria-invalid={Boolean(fieldErrors.address_line1)}
-              disabled={!isOwner}
-              required
+              disabled={!canEdit}
             />
             {fieldErrors.address_line1 && (
               <p className="text-sm text-destructive">{fieldErrors.address_line1}</p>
@@ -256,20 +285,19 @@ export function CompanyForm({
               id="address_line2"
               value={formData.address_line2}
               onChange={(e) => handleFieldChange('address_line2', e.target.value)}
-              disabled={!isOwner}
+              disabled={!canEdit}
             />
           </div>
           
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="city">City *</Label>
+              <Label htmlFor="city">City</Label>
               <Input
                 id="city"
                 value={formData.city}
                 onChange={(e) => handleFieldChange('city', e.target.value)}
                 aria-invalid={Boolean(fieldErrors.city)}
-                disabled={!isOwner}
-                required
+                disabled={!canEdit}
               />
               {fieldErrors.city && (
                 <p className="text-sm text-destructive">{fieldErrors.city}</p>
@@ -277,14 +305,13 @@ export function CompanyForm({
             </div>
             
             <div className="space-y-2">
-              <Label htmlFor="postal_code">Postal code *</Label>
+              <Label htmlFor="postal_code">Postal code</Label>
               <Input
                 id="postal_code"
                 value={formData.postal_code}
                 onChange={(e) => handleFieldChange('postal_code', e.target.value)}
                 aria-invalid={Boolean(fieldErrors.postal_code)}
-                disabled={!isOwner}
-                required
+                disabled={!canEdit}
               />
               {fieldErrors.postal_code && (
                 <p className="text-sm text-destructive">{fieldErrors.postal_code}</p>
@@ -293,11 +320,11 @@ export function CompanyForm({
           </div>
           
           <div className="space-y-2">
-            <Label htmlFor="country">Country *</Label>
+            <Label htmlFor="country">Country</Label>
             <CountryCombobox
               value={formData.country}
               onValueChange={(value) => handleFieldChange('country', value)}
-              disabled={!isOwner}
+              disabled={!canEdit}
             />
             {fieldErrors.country && (
               <p className="text-sm text-destructive">{fieldErrors.country}</p>
@@ -315,14 +342,13 @@ export function CompanyForm({
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="bank_account_name">Account name *</Label>
+            <Label htmlFor="bank_account_name">Account name</Label>
             <Input
               id="bank_account_name"
               value={formData.bank_account_name}
               onChange={(e) => handleFieldChange('bank_account_name', e.target.value)}
               aria-invalid={Boolean(fieldErrors.bank_account_name)}
-              disabled={!isOwner}
-              required
+              disabled={!canEdit}
             />
             {fieldErrors.bank_account_name && (
               <p className="text-sm text-destructive">{fieldErrors.bank_account_name}</p>
@@ -330,14 +356,13 @@ export function CompanyForm({
           </div>
           
           <div className="space-y-2">
-            <Label htmlFor="bank_account_number">Account number *</Label>
+            <Label htmlFor="bank_account_number">Account number</Label>
             <Input
               id="bank_account_number"
               value={formData.bank_account_number}
               onChange={(e) => handleFieldChange('bank_account_number', e.target.value)}
               aria-invalid={Boolean(fieldErrors.bank_account_number)}
-              disabled={!isOwner}
-              required
+              disabled={!canEdit}
             />
             {fieldErrors.bank_account_number && (
               <p className="text-sm text-destructive">{fieldErrors.bank_account_number}</p>
@@ -350,7 +375,7 @@ export function CompanyForm({
               id="bank_bic"
               value={formData.bank_bic}
               onChange={(e) => handleFieldChange('bank_bic', e.target.value)}
-              disabled={!isOwner}
+              disabled={!canEdit}
             />
           </div>
         </CardContent>
@@ -361,56 +386,57 @@ export function CompanyForm({
           <CardHeader>
             <CardTitle className="text-destructive">Danger zone</CardTitle>
             <CardDescription>
-              Permanently delete this company and all associated data
+              This will close the workspace and make it read-only. Data is preserved.
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+            <Dialog open={closeDialogOpen} onOpenChange={setCloseDialogOpen}>
               <DialogTrigger asChild>
-                <Button variant="destructive">Delete company</Button>
+                <Button variant="destructive" disabled={isReadOnly}>
+                  {isReadOnly ? 'Workspace closed' : 'Close workspace'}
+                </Button>
               </DialogTrigger>
               <DialogContent>
                 <DialogHeader>
-                  <DialogTitle>Are you absolutely sure?</DialogTitle>
+                  <DialogTitle>Close workspace?</DialogTitle>
                   <DialogDescription>
-                    This action cannot be undone. This will permanently delete your
-                    company and remove all associated data from our servers.
+                    Closing this workspace makes it read-only. Your data is preserved and sign-in access remains available.
                   </DialogDescription>
                 </DialogHeader>
                 <div className="space-y-2">
-                  <Label htmlFor="delete-confirm">
-                    Type <span className="font-semibold">{company.name}</span> to confirm
+                  <Label htmlFor="close-confirm">
+                    Type <span className="font-semibold">CLOSE</span> to confirm
                   </Label>
                   <Input
-                    id="delete-confirm"
-                    value={deleteConfirmName}
-                    onChange={(e) => setDeleteConfirmName(e.target.value)}
-                    placeholder={company.name}
+                    id="close-confirm"
+                    value={closeConfirmation}
+                    onChange={(e) => setCloseConfirmation(e.target.value)}
+                    placeholder="CLOSE"
                   />
                 </div>
                 <DialogFooter>
                   <Button
                     variant="outline"
                     onClick={() => {
-                      setDeleteDialogOpen(false)
-                      setDeleteConfirmName('')
+                      setCloseDialogOpen(false)
+                      setCloseConfirmation('')
                     }}
-                    disabled={isDeleting}
+                    disabled={isClosing}
                   >
                     Cancel
                   </Button>
                   <Button
                     variant="destructive"
-                    onClick={handleDeleteCompany}
-                    disabled={deleteConfirmName !== company.name || isDeleting}
+                    onClick={handleCloseWorkspace}
+                    disabled={closeConfirmation !== 'CLOSE' || isClosing}
                   >
-                    {isDeleting ? (
+                    {isClosing ? (
                       <>
                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Deleting...
+                        Closing...
                       </>
                     ) : (
-                      'Delete company'
+                      'Close workspace'
                     )}
                   </Button>
                 </DialogFooter>

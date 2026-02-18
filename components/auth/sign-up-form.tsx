@@ -25,9 +25,10 @@ type SignUpFormData = z.infer<typeof signUpSchema>
 interface SignUpFormProps {
   redirectTo?: string
   inviteEmail?: string
+  invitedCompanyId?: string
 }
 
-export function SignUpForm({ redirectTo = '/dashboard', inviteEmail }: SignUpFormProps) {
+export function SignUpForm({ redirectTo = '/dashboard', inviteEmail, invitedCompanyId }: SignUpFormProps) {
   const router = useRouter()
   const [isLoading, setIsLoading] = useState(false)
   const isInviteFlow = redirectTo.startsWith('/invite/accept')
@@ -44,6 +45,13 @@ export function SignUpForm({ redirectTo = '/dashboard', inviteEmail }: SignUpFor
   })
 
   async function onSubmit(data: SignUpFormData) {
+    if (isInviteFlow && !invitedCompanyId) {
+      toast.error('Error', {
+        description: 'Invitation context is missing. Please reopen your invitation email link.',
+      })
+      return
+    }
+
     if (!isInviteFlow && (!data.companyName || data.companyName.trim().length < 2)) {
       toast.error('Error', {
         description: 'Company name must be at least 2 characters',
@@ -64,6 +72,7 @@ export function SignUpForm({ redirectTo = '/dashboard', inviteEmail }: SignUpFor
         data: {
           full_name: data.fullName,
           company_name: isInviteFlow ? undefined : data.companyName,
+          invited_company_id: isInviteFlow ? invitedCompanyId : undefined,
         },
         emailRedirectTo: callbackUrl.toString(),
       },

@@ -172,6 +172,9 @@ export type Database = {
           email: string
           full_name: string | null
           id: string
+          pending_email: string | null
+          pending_email_requested_at: string | null
+          pending_email_verification_sent_at: string | null
           role: string
           updated_at: string
         }
@@ -182,6 +185,9 @@ export type Database = {
           email: string
           full_name?: string | null
           id: string
+          pending_email?: string | null
+          pending_email_requested_at?: string | null
+          pending_email_verification_sent_at?: string | null
           role?: string
           updated_at?: string
         }
@@ -192,6 +198,9 @@ export type Database = {
           email?: string
           full_name?: string | null
           id?: string
+          pending_email?: string | null
+          pending_email_requested_at?: string | null
+          pending_email_verification_sent_at?: string | null
           role?: string
           updated_at?: string
         }

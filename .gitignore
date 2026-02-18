@@ -45,3 +45,6 @@ next-env.d.ts
 
 # cursor (commit settings, ignore chat history)
 .c
+
+# local testing docs
+docs/db-commands.md
