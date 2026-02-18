@@ -1,7 +1,7 @@
 # Sprint 0: Technical Foundation - Overview
 
-**Status:** In Progress (Day 5 of 10)  
-**Last Updated:** February 16, 2026
+**Status:** In Progress (Day 7 of 10)  
+**Last Updated:** February 18, 2026
 
 ## Overview
 
@@ -25,10 +25,10 @@ Sprint 0 establishes the core technical infrastructure for Summit: development e
 - ✅ Development environment setup
 - ✅ Database schema and Supabase integration
 - ✅ Authentication system
+- ✅ Profile management (including email change with re-verification)
+- ✅ Company membership system (member invitations + acceptance)
 
 ### Remaining: Days 6-10
-- ⏳ Profile management (email change with re-verification)
-- ✅ Workspace system (member invitations + acceptance)
 - ⏳ Subscription & billing (Mollie)
 - ⏳ Security & compliance
 
@@ -74,18 +74,18 @@ Sprint 0 establishes the core technical infrastructure for Summit: development e
 
 **Database Schema:**
 - [x] `companies` table (tenant container)
-- [x] `profiles` table (user profiles with workspace_id and role)
+- [x] `profiles` table (user profiles with company_id and role)
 - [x] `plans` table (subscription plans)
-- [x] `subscriptions` table (workspace subscriptions)
+- [x] `subscriptions` table (company subscriptions)
 - [x] RLS policies enabled on all tables
-- [x] Database triggers (auto-create workspace/profile on signup)
+- [x] Database triggers (auto-create company/profile on signup)
 - [x] Seeded data (Summit Pro monthly/yearly plans)
 
 **Key Decisions:**
 - One company per user (email globally unique)
 - Owner vs Member roles (members have full data access)
 - 14-day trial period starting after email verification
-- Workspace status tracks: trial | active | past_due | suspended | canceled
+- Company status tracks: trial | active | past_due | suspended | canceled
 
 ---
 
@@ -107,7 +107,7 @@ Sprint 0 establishes the core technical infrastructure for Summit: development e
   - getCurrentProfile()
   - requireAuth()
   - requireOwner()
-  - canAccessWorkspace()
+  - canAccessCompany()
 - [x] Protected route patterns (dashboard layout)
 - [x] Session management via middleware
 
@@ -130,7 +130,7 @@ Sprint 0 establishes the core technical infrastructure for Summit: development e
 
 ---
 
-### 4. User Profile Management ⏳
+### 4. User Profile Management ✅
 
 **Profile Pages:**
 - [x] Profile viewing page (`/profile`)
@@ -140,21 +140,25 @@ Sprint 0 establishes the core technical infrastructure for Summit: development e
 
 **Profile Features:**
 - [x] Update full name
-- [ ] Update email (with re-verification)
+- [x] Update email (with re-verification)
+  - [x] Pending email state (`pending_email`)
+  - [x] Verification callback sync to canonical profile email
+  - [x] Resend verification
+  - [x] Cancel pending change + invalidate stale links
 - [x] Upload avatar to Supabase Storage
 - [x] Remove avatar (revert to initials fallback)
 - [x] Supabase Storage bucket + policies for avatars
 
-**Estimated Time:** 1 day
+**Estimated Time:** Completed
 
 ---
 
-### 5. Workspace System ⏳
+### 5. Company & Membership System ⏳
 
-**Workspace Settings:**
-- [x] Workspace settings page (`/settings`)
-- [x] Workspace name editing (owner only)
-- [x] Workspace deletion (owner only, with confirmation)
+**Company Settings:**
+- [x] Company settings page (`/settings`)
+- [x] Company name editing (owner only)
+- [x] Company deletion (owner only, with confirmation)
 
 **Member Management:**
 - [x] Member invitation system (owner only)
@@ -204,7 +208,7 @@ Sprint 0 establishes the core technical infrastructure for Summit: development e
 - [ ] Handle subscription.created event
 - [ ] Handle subscription.updated event
 - [ ] Handle subscription.cancelled event
-- [ ] Update workspace status based on subscription
+- [ ] Update company status based on subscription
 
 **Billing UI:**
 - [ ] Billing page (`/billing`)
@@ -216,8 +220,8 @@ Sprint 0 establishes the core technical infrastructure for Summit: development e
 - [ ] Payment history view
 
 **Access Control:**
-- [ ] Feature gating based on workspace status
-- [ ] Read-only mode for suspended/past_due workspaces
+- [ ] Feature gating based on company status
+- [ ] Read-only mode for suspended/past_due companies
 - [ ] Trial expiration handling
 - [ ] Subscription helper functions (`lib/subscriptions/helpers.ts`)
 
@@ -273,7 +277,7 @@ By the end of Sprint 0, the following must work:
 - [x] New user can sign up with email/password
 - [x] Email verification email sent
 - [x] User can verify email via link
-- [x] Workspace and profile auto-created on signup
+- [x] Company and profile auto-created on signup
 - [x] User can sign in with verified account
 - [x] User can reset password via email
 - [x] User can sign out
@@ -284,19 +288,24 @@ By the end of Sprint 0, the following must work:
 - [x] Company created with 14-day trial
 - [x] Profile created with role='owner'
 - [x] RLS policies prevent cross-company data access
-- [x] Users can only see their own workspace data
+- [x] Users can only see their own company data
 - [x] Service role key never exposed client-side
 
 ### Remaining Success Criteria ⏳
 - [x] User can edit profile and upload avatar
-- [x] Owner can invite members to workspace
-- [x] Owner can remove members from workspace
+- [x] User can request, verify, resend, and cancel email changes safely
+- [x] Owner can invite members to company
+- [x] Owner can remove members from company
 - [ ] Users can subscribe to a plan via Mollie
 - [ ] Subscription status correctly gates feature access
 - [ ] Webhooks process payments idempotently
 - [ ] Security headers configured
 - [ ] Terms and privacy pages exist
 - [ ] Application deployable to production (Vercel)
+
+### Verification Checklists
+- [x] Invitation flow checklist (`docs/verification/invitation-flow-checklist.md`)
+- [x] Email change flow checklist (`docs/verification/email-change-flow-checklist.md`)
 
 ---
 
@@ -326,19 +335,20 @@ By the end of Sprint 0, the following must work:
 ## Key Architectural Decisions
 
 ### Multi-Tenancy Model
-- **One workspace per user** - Email is globally unique
-- **Workspace isolation** - All queries filtered by workspace_id via RLS
-- **No multi-workspace** - Users cannot belong to multiple workspaces
+- **One company per user** - Email is globally unique
+- **Company isolation** - All queries filtered by company_id via RLS
+- **No multi-company** - Users cannot belong to multiple companies
 
 ### Role Model
 - **Owner** - Full permissions (billing, member management, all data operations)
-- **Member** - Full data permissions (create/edit clients, projects, invoices) but no billing/admin access
+- **Member** - Full data permissions (create/edit clients, projects, invoices) but no billing/member-management access
 
 ### Trial & Subscription
 - **14-day trial** - Starts after email verification
-- **Per-workspace billing** - Subscription tied to workspace, not individual users
+- **Per-company billing** - Subscription tied to company, not individual users
 - **One tier to start** - Summit Pro (€15/month or €150/year)
-- **Access control** - Read-only when suspended/past_due, blocked when canceled
+- **Access control** - Read-only when `past_due`, `suspended`, or `canceled`
+- **Authoritative matrix** - `docs/development-context.md` → **Access Control Matrix (Authoritative)**
 
 ### Next.js 16 Patterns
 - **Async cookies API** - Required for Next.js 16 (`await cookies()`)
@@ -364,7 +374,7 @@ For detailed implementation guidance, see:
 - **Days 3-4:** Database schema and Supabase ✅
 - **Day 5:** Authentication system ✅
 - **Day 6:** Profile management ✅
-- **Days 7-8:** Workspace system and member invitations ✅
+- **Days 7-8:** Company membership system and member invitations ✅
 - **Days 9:** Subscription & billing (Mollie) ⏳
 - **Day 10:** Security, compliance, testing ⏳
 
@@ -379,15 +389,9 @@ For detailed implementation guidance, see:
 2. Subscription status feature-gating hooks
 3. Add invite/auth lifecycle tests (including reset-password and delayed invite acceptance)
 
-**After Profile:** Choose between:
-- Workspace system (member invitations)
-- Subscription & billing (Mollie)
-- Security & compliance
-
-Recommended order: Workspace → Security → Billing
 Recommended order: Security → Billing
 
 ---
 
-**Last Updated:** February 16, 2026  
+**Last Updated:** February 18, 2026  
 **Sprint 0 Progress:** 70% complete (7 of 10 days)

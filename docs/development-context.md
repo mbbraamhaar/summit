@@ -1,6 +1,6 @@
 # Summit - Development Context
 
-**Last Updated:** February 17, 2026  
+**Last Updated:** February 18, 2026  
 **Current Sprint:** Sprint 0 (Technical Foundation)  
 **Status:** Active
 
@@ -21,6 +21,11 @@
 - ❌ NO session packs (hourly/block time) in v1
 - ❌ NO retainer agreements in v1
 - ✅ ONLY fixed-price projects with milestones
+
+### Terminology (Canonical)
+- **Company** is the canonical tenant term in schema and backend logic (`companies`, `profiles.company_id`, `subscriptions.company_id`, `invitations.company_id`).
+- **Workspace** may still appear in legacy UI copy and error codes (for example `WORKSPACE_READ_ONLY`), but maps 1:1 to company.
+- Documentation should use **company** unless referencing an existing code symbol or UI string verbatim.
 
 ---
 
@@ -96,12 +101,36 @@
 - One plan: "Summit Pro" (monthly or yearly)
 - Monthly: €15/month (note: we seeded with 15.00, not 29.00)
 - Yearly: €150/year
-- When trial ends or payment fails: access blocked but data readable
+- When trial ends or payment fails: write access is blocked but data remains readable
 
 **Access Control:**
 - `companies.status` = 'trial' | 'active' | 'past_due' | 'suspended' | 'canceled'
 - `trial` or `active` → full access
 - `past_due`, `suspended`, `canceled` → read-only access (can log in, view data, cannot create/edit)
+
+### Access Control Matrix (Authoritative)
+
+This is the single source of truth for app access gating behavior.
+
+| Source | Field | Purpose | Notes |
+|---|---|---|---|
+| `companies` | `status` | Product access gating | Primary gate for read vs write behavior |
+| `companies` | `trial_ends_at` | Trial expiry cutoff | `trial` becomes read-only when expired |
+| `subscriptions` | `status` | Payment lifecycle tracking | Used by billing logic/webhooks, not tenant isolation |
+
+| `companies.status` | Default mode | Write access | Read access |
+|---|---|---|---|
+| `trial` (not expired) | full | allowed | allowed |
+| `active` | full | allowed | allowed |
+| `past_due` | read_only | blocked | allowed |
+| `suspended` | read_only | blocked | allowed |
+| `canceled` | read_only | blocked | allowed |
+| `trial` (expired) | read_only | blocked | allowed |
+
+Implementation notes:
+- Write gating is enforced server-side via subscription helpers (not only UI state).
+- Invitation create/revoke currently allows owner actions when status is `trial`, `active`, `past_due`, or `suspended` and trial is not expired.
+- Product rule says trial starts after email verification, but the current `handle_new_user()` trigger sets `trial_ends_at` at signup time. This can shorten effective trial time if verification is delayed.
 
 ### 4. Next.js 16 Patterns (IMPORTANT!)
 
@@ -148,6 +177,9 @@ const cookieStore = await cookies()
 - id (uuid, pk, references auth.users)
 - company_id (uuid, references companies)
 - email (text, unique)
+- pending_email (text, nullable, unique when present)
+- pending_email_requested_at (timestamp, nullable)
+- pending_email_verification_sent_at (timestamp, nullable)
 - full_name (text, nullable)
 - avatar_url (text, nullable)
 - role (text) - 'owner' | 'member'
@@ -216,9 +248,13 @@ const cookieStore = await cookies()
 -- Function: handle_new_user()
 -- Trigger: on_auth_user_created (after insert on auth.users)
 -- Does:
---   1. Creates company with 14-day trial
---   2. Uses company_name from signup metadata (or generates from name/email)
---   3. Creates profile linked to company as owner
+--   1. If invited signup metadata includes invited_company_id:
+--      - validates target company exists
+--      - creates profile as member in existing company
+--   2. Otherwise:
+--      - creates a new company with 14-day trial
+--      - creates profile as owner of that company
+--   3. Company name fallback: company_name -> full_name -> email local-part
 ```
 
 #### Auto-update timestamps
@@ -293,7 +329,7 @@ summit/
 
 ## Environment Variables
 
-### Current Configuration (`.env.local`)
+### Required Variables (`.env.local`)
 
 ```bash
 # Supabase
@@ -313,14 +349,21 @@ RESEND_API_KEY=re_xxxxxxxxx
 RESEND_FROM_EMAIL=Summit <no-reply@your-domain.com>
 INVITE_EXPIRY_HOURS=168
 
-# Avatar upload is enabled by default in Sprint 0 (no feature flag required)
+# Optional (currently not used in runtime logic)
+NEXT_PUBLIC_ENABLE_AVATAR_UPLOAD=false
 ```
 
 **Security notes:**
-- Service role key NEVER goes client-side
-- Only use anon key in browser
-- Mollie keys will be added when we integrate payments
-- Invitation emails are sent from server-side actions via Resend
+- `SUPABASE_SERVICE_ROLE_KEY` is server-only and must never be exposed to the browser.
+- Only `NEXT_PUBLIC_*` values are client-safe.
+- Invitation and profile-admin flows that use privileged APIs must run server-side only.
+- `MOLLIE_API_KEY` and `MOLLIE_WEBHOOK_SECRET` are required for billing rollout, but webhook handlers are not yet implemented.
+- `NEXT_PUBLIC_ENABLE_AVATAR_UPLOAD` exists in `.env.example` as optional compatibility scaffolding and is not used by current runtime code.
+
+### Service Role Boundaries
+- Allowed usage: server routes/actions and server-only utilities (for example invite lookup and admin auth operations).
+- Disallowed usage: client components, browser bundles, or public API responses.
+- RLS remains mandatory for normal application reads/writes; service role bypass should be scoped to exceptional flows only.
 
 ## Coding Conventions (from `.cursorrules`)
 
@@ -391,9 +434,102 @@ When building, create actual files for:
 ### `accept_invitation(invite_token, user_email)`
 - Validates the invitation token hash and expiry
 - Verifies session email against invitation email
-- Attaches the user profile to the target company
+- Attaches or updates the user profile to the target company
 - Marks invitation status as accepted
-- Returns status text (`accepted`, `already_accepted`, or invalid states)
+- Returns status text (`accepted`, `already_accepted`, or `invalid`)
+
+---
+
+## Billing Safety Baseline
+
+- Webhook processing must be idempotent (deduplicate by provider event ID and company/subscription keys).
+- The schema enforces one subscription per company (`subscriptions.company_id` is unique).
+- Access gating must be enforced server-side using company entitlement checks, not only in UI.
+- `companies.status` is the access gate; `subscriptions.status` is payment lifecycle state.
+- Service-role operations must stay in server-only contexts and be limited to privileged workflows.
+
+---
+
+## Auth & Lifecycle Flows
+
+### Email Change Lifecycle
+
+1. User requests email change from `/profile`.
+2. System stores `pending_email`, `pending_email_requested_at`, and `pending_email_verification_sent_at`.
+3. User must verify via `/auth/email-change/callback` before profile email is finalized.
+4. Callback sync updates `profiles.email` only when auth email matches `pending_email`.
+5. Canceling a pending change clears pending columns and reverts auth email to canonical profile email.
+
+Behavior when verification is not completed:
+- `profiles.email` remains unchanged.
+- `pending_email` remains set until verification or explicit cancel.
+- Old/stale verification links resolve deterministically without silently applying canceled state.
+
+Invitation interaction:
+- Invitation acceptance validates against the current session email.
+- If session email does not match invitation email (including unresolved email-change state), acceptance returns `invalid`.
+
+### Invitation Lifecycle
+
+Statuses:
+- `pending`: invite can be accepted before `expires_at`.
+- `accepted`: invite was consumed; repeated acceptance returns `already_accepted`.
+- `revoked`: owner revoked the invite.
+- `expired`: modeled in schema; current runtime treats expired pending invites as invalid when `expires_at <= now()`.
+
+Lifecycle rules:
+- Tokens are stored as SHA-256 hashes (`token_hash`), never raw values.
+- Acceptance is idempotent (`accepted` and `already_accepted` are safe outcomes).
+- Email mismatch returns `invalid`.
+- Delayed acceptance is supported via httpOnly invite cookies persisted for up to 7 days.
+- Invalid/expired/revoked tokens redirect to `/invite/invalid` and clear invite cookies.
+
+### Password Reset and Invite Interaction
+
+- Password reset sends recovery links to `/update-password`.
+- After password update, auth flow goes through `/auth/post-auth`.
+- `/auth/post-auth` prioritizes invite completion when invite cookies are present, so invite context survives reset/sign-in/sign-up transitions.
+- Expired/invalid invite tokens are handled deterministically (invalid screen + cookie clear).
+- Double-accept attempts are safe due to idempotent acceptance handling.
+
+---
+
+## Security Baseline Documentation
+
+### Intended Security Headers
+
+The following headers are required for production hardening (documented baseline; not yet configured in `next.config.ts`):
+- `Strict-Transport-Security` (HSTS)
+- `Content-Security-Policy` (CSP)
+- `X-Frame-Options`
+- `Referrer-Policy`
+- `X-Content-Type-Options`
+
+### Rate Limiting Strategy (High Level)
+
+Planned controls:
+- Sign up: per-IP and per-email throttling to limit account creation abuse.
+- Sign in: per-IP and per-account throttling with escalating cooldown for brute-force resistance.
+- Password reset: per-IP and per-email throttling to prevent enumeration and mail abuse.
+- Invite acceptance: per-token and per-IP throttling to reduce token brute force and replay noise.
+
+Implementation guidance:
+- Enforce limits server-side at auth and invite entry points.
+- Record allow/deny decisions with timestamps for abuse investigations.
+- Return generic error responses to avoid account/token enumeration.
+
+---
+
+## Production Readiness Checklist
+
+- [ ] Backups: backup frequency, retention, and restore drill documented.
+- [ ] Monitoring: uptime, latency, and database health monitoring enabled.
+- [ ] Error tracking: centralized error reporting for client and server.
+- [ ] Webhook logging: structured webhook request/response + dedupe outcomes.
+- [ ] Trial expiry handling: deterministic transition to read-only when trial expires.
+- [ ] Subscription cancellation behavior: clear UX and status transition handling.
+- [ ] GDPR considerations: lawful basis, retention windows, and data access/deletion policy.
+- [ ] Data deletion flow: verified end-to-end deletion for user/company lifecycle paths.
 
 ---
 
@@ -438,7 +574,7 @@ If you need clarification on any architectural decision or pattern:
 1. **Company model:** One user = one company (email is unique globally)
 2. **Roles:** Owner vs Member (members have full data access)
 3. **Subscription:** Per company, not per user
-4. **Trial:** 14 days, starts after email verification
+4. **Trial:** 14 days, product rule is post-verification start (current DB timestamp is set at signup; see access matrix notes)
 5. **Version 1 scope:** Fixed-bid projects with milestones ONLY
 
 ---

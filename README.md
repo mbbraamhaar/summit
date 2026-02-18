@@ -11,15 +11,15 @@ Summit helps freelancers and small studios automate milestone-based billing for 
 - 📊 **Milestone Tracking** - Define project milestones with payment schedules
 - 📄 **Automated Invoice Generation** - Generate invoices when milestones are completed
 - 💳 **Payment Processing** - Mollie integration with webhook automation
-- 👥 **Multi-user Workspaces** - Team collaboration with role-based access
-- 🔒 **Workspace Isolation** - Complete data separation between workspaces
+- 👥 **Multi-user Companies** - Team collaboration with role-based access
+- 🔒 **Company Isolation** - Complete data separation between companies
 
 ### Coming Soon
 - Session pack agreements (hourly/block time billing)
 - Retainer agreements with recurring billing
 
 ### Tech Stack
-- **Framework**: Next.js 14+ (App Router)
+- **Framework**: Next.js 16+ (App Router)
 - **Language**: TypeScript (strict mode)
 - **Styling**: Tailwind CSS + shadcn/ui (installed on-demand)
 - **Database**: Supabase (PostgreSQL)
@@ -82,20 +82,20 @@ Summit helps freelancers and small studios automate milestone-based billing for 
 ## Architecture Overview
 
 ### Multi-tenancy Model
-Summit uses a **workspace-based multi-tenancy model**:
-- Each workspace is an isolated tenant
-- All data queries require and enforce `workspace_id`
+Summit uses a **single-company multi-tenancy model**:
+- Each company is an isolated tenant
+- All data queries require and enforce `company_id`
 - RLS policies ensure complete data isolation
-- Users can belong to multiple workspaces with different roles
+- Users belong to exactly one company
 
 ### Authorization Model
 Two role types:
-- **Owner**: Full permissions including billing, member management, workspace settings
-- **Member**: Can manage clients, projects, and invoices within workspace
+- **Owner**: Full permissions including billing, member management, company settings
+- **Member**: Can manage clients, projects, and invoices within company
 
 ### Security
 - Row-level security (RLS) on all tables
-- Workspace isolation enforced at database level
+- Company isolation enforced at database level
 - Rate limiting on authentication and public endpoints
 - Audit logging for critical operations
 - Secure credential storage via environment variables

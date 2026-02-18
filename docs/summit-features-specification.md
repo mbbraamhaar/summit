@@ -1,6 +1,6 @@
 # Summit - Feature Specification (Updated)
 
-**Last Updated:** February 16, 2026  
+**Last Updated:** February 18, 2026  
 **Version:** 1.0 (Fixed-Bid Projects Only)
 
 ## Overview
@@ -13,13 +13,13 @@ This document outlines the features for Summit, organized by implementation phas
 ## Tech Foundation
 
 ### Tenant & Identity
-**Create and manage accounts: signup, login, workspace creation, and roles.**
+**Create and manage accounts: signup, login, company creation, and roles.**
 
 **Implementation Model:**
-- One user = one workspace (email globally unique)
-- First user who signs up = workspace owner
-- Owners can invite members to their workspace
-- No multi-workspace support (users belong to exactly one workspace)
+- One user = one company (email globally unique)
+- First user who signs up = company owner
+- Owners can invite members to their company
+- No multi-company support (users belong to exactly one company)
 
 **Features:**
 - Signup with email verification ✅ (DB trigger ready, UI to build)
@@ -42,24 +42,24 @@ This document outlines the features for Summit, organized by implementation phas
 | View billing info | ✅ | ✅ (read-only) |
 | Manage subscription | ✅ | ❌ |
 | Invite/remove members | ✅ | ❌ |
-| Delete workspace | ✅ | ❌ |
+| Delete company | ✅ | ❌ |
 
 **Key Difference from Original Spec:**
 - Members have FULL data access (not limited)
-- Distinction is primarily for billing/admin operations
-- Simpler than original admin/user/viewer model
+- Distinction is primarily for billing/ownership operations
+- No admin/viewer roles in the current model
 
 ### Authorization & Access
-**Enforce permissions so only the right users can perform the right actions in the workspace.**
+**Enforce permissions so only the right users can perform the right actions in the company.**
 
 **Implementation:**
-- RLS policies enforce workspace isolation at database level ✅
-- Owner-only restrictions for: subscription management, member management, workspace deletion ✅
-- All data operations filtered by workspace_id ✅
-- No project-level permissions (workspace-level only)
+- RLS policies enforce company isolation at database level ✅
+- Owner-only restrictions for: subscription management, member management, company deletion ✅
+- All data operations filtered by company_id ✅
+- No project-level permissions (company-level only)
 
 **Features:**
-- Workspace isolation (workspace_id required on all queries) ✅
+- Company isolation (company_id required on all queries) ✅
 - RLS policies ✅
 - Authorization helper functions ⏳
 - Role-based UI controls ⏳
@@ -82,15 +82,16 @@ This document outlines the features for Summit, organized by implementation phas
 **Trial Period:** 14 days (starts after email verification)
 
 **Subscription Model:**
-- Workspace subscription (not per-user) ✅
+- Company subscription (not per-user) ✅
 - One tier: "Summit Pro" (monthly or yearly) ✅
 - Pricing: €15/month or €150/year ✅
 - Future: May add "Solo" tier with team limitations
 
 **Access Control:**
-- Workspace status: trial | active | past_due | suspended | canceled ✅
+- Company status: trial | active | past_due | suspended | canceled ✅
 - `trial` or `active` = full access
 - `past_due`, `suspended`, `canceled` = read-only access (can view data, cannot create/edit)
+- Authoritative matrix: `docs/development-context.md` → **Access Control Matrix (Authoritative)**
 
 **Features:**
 - Trial tracking ✅ (DB implemented)
@@ -159,7 +160,7 @@ This document outlines the features for Summit, organized by implementation phas
 **Produce and send compliant invoices (numbering, PDFs, branding, delivery) to the client.**
 
 **Features:**
-- Invoice numbering per workspace ⏳
+- Invoice numbering per company ⏳
 - PDF generation ⏳
 - Email sending ⏳
 - Payment terms configuration ⏳
@@ -237,7 +238,7 @@ This document outlines the features for Summit, organized by implementation phas
 
 **Not in Version 1:**
 - ❌ Internal admin panel
-- ❌ Workspace directory
+- ❌ Company directory
 - ❌ Webhook event log
 - ❌ Feature flags
 
@@ -269,7 +270,7 @@ This document outlines the features for Summit, organized by implementation phas
 **Sprint 0 (Foundation) - 10 days:**
 - Days 1-3: Environment + Database ✅
 - Days 4-5: Authentication ✅
-- Days 6-7: Authorization + Workspace System ⏳
+- Days 6-7: Authorization + Company System ⏳
 - Days 8-9: Mollie Integration + Subscriptions ⏳
 - Day 10: Security + Compliance ⏳
 
@@ -301,7 +302,7 @@ This document outlines the features for Summit, organized by implementation phas
 
 **All features must adhere to:**
 - RLS policies enforced at database level ✅
-- Workspace isolation on all queries ✅
+- Company isolation on all queries ✅
 - Rate limiting on public endpoints ⏳
 - Audit logging for sensitive operations ⏳ (minimal in v1)
 - Secure credential storage ✅
@@ -347,7 +348,7 @@ This document outlines the features for Summit, organized by implementation phas
 - Zero critical security vulnerabilities
 
 ### Business Metrics (Version 1)
-- User signup to first workspace creation: < 2 minutes (automatic)
+- User signup to first company creation: < 2 minutes (automatic)
 - Time to create first invoice: < 20 minutes
 - Email delivery rate: > 95%
 
@@ -364,7 +365,7 @@ This document outlines the features for Summit, organized by implementation phas
 ✅ Milestone-based billing  
 ✅ Manual invoice generation  
 ✅ Email delivery  
-✅ Workspace collaboration (owner + members)  
+✅ Company collaboration (owner + members)  
 ✅ Mollie subscription payments  
 ✅ 14-day trial  
 
@@ -385,15 +386,15 @@ This document outlines the features for Summit, organized by implementation phas
 ## Appendix
 
 ### Glossary (Version 1)
-- **Workspace**: A tenant/account containing users, clients, projects, and invoices
+- **Company**: A tenant/account containing users, clients, projects, and invoices
 - **Owner**: User role with full permissions including billing and member management
-- **Member**: User role with full data permissions but no billing/admin access
+- **Member**: User role with full data permissions but no billing/member-management access
 - **Client**: External entity that receives invoices (no login access)
 - **Project**: Fixed-bid work engagement with a client
 - **Milestone**: Fixed deliverable in a project with associated payment amount
 - **Invoice**: Billing document sent to client via email
 - **Trial**: 14-day free access period starting after email verification
-- **Workspace Status**: trial | active | past_due | suspended | canceled
+- **Company Status**: trial | active | past_due | suspended | canceled
 
 ### Related Documents
 - Sprint 0: Technical Foundation (Updated): `/docs/sprint-0-technical-foundation-updated.md`
@@ -406,7 +407,7 @@ This document outlines the features for Summit, organized by implementation phas
 ## Changelog
 
 ### Version 1.0 (February 15, 2026)
-- Updated to reflect simplified workspace model (one user = one workspace)
+- Updated to reflect simplified company model (one user = one company)
 - Clarified role model (owner vs member with full data access for both)
 - Defined v1 scope (fixed-bid projects only)
 - Updated trial period to 14 days
@@ -416,5 +417,5 @@ This document outlines the features for Summit, organized by implementation phas
 ---
 
 *Document Version: 1.0 (Updated)*  
-*Last Updated: February 15, 2026*  
+*Last Updated: February 18, 2026*  
 *Reflects actual implementation decisions and v1 scope*
