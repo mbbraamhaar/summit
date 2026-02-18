@@ -38,6 +38,11 @@ Canonical statuses:
 - `revoked`: owner canceled invitation.
 - `expired`: schema status exists; current runtime also derives expiration by checking `pending` + `expires_at <= now()`.
 
+Expiration semantics (current implementation):
+- `expired` is an allowed persisted status in schema, but is not currently materialized by a background job.
+- Expiration is enforced at read/accept time by checking `status = 'pending'` with `expires_at <= now()`.
+- If expired transitions are materialized later, that is an explicit implementation change.
+
 Acceptance outcomes:
 - `accepted`
 - `already_accepted`

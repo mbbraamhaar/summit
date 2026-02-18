@@ -58,6 +58,11 @@ Responsibility:
 - Produce UBL output in later phase.
 - Keep rendering concerns separate from tax-policy decisions and source-domain reads.
 
+## Immutability and Snapshots
+
+- Generated invoices are immutable snapshots; once issued, they must not change if source-domain data changes.
+- Each generated invoice must store the full normalized `InvoiceDocument` snapshot used for rendering, with reference IDs stored separately.
+
 ## Invoice Numbering Strategy
 
 Current decisions:

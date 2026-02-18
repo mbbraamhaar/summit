@@ -14,6 +14,7 @@ It is authoritative for status semantics and access mode definitions.
 - Full access: `trial` (when not expired), `active`.
 - Read-only: `past_due`, `suspended`, `canceled`, and expired `trial`.
 - `subscriptions.status` tracks payment lifecycle; it is not the canonical gate by itself.
+- No other table, flag, or status (including `subscriptions.status`) may grant write access when `companies.status` is read-only, including expired `trial`.
 
 ## Status Definitions
 

@@ -9,7 +9,9 @@ It separates policy decisions from payment-provider implementation details.
 ## Canonical Rules
 
 - Summit subscription sales are B2B only.
+- Summit does not support B2C subscriptions in v1.
 - Checkout requires required business and tax identity fields.
+- Checkout must require business identity fields; if business identity is missing, checkout is blocked.
 - Tax treatment depends on billing country and VAT/business-registration validation outcomes.
 - Checkout must be blocked when mandatory validation fails.
 - Subscription invoice generation occurs only after confirmed payment success.
