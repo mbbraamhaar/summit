@@ -16,8 +16,6 @@ export type Database = {
     Tables: {
       companies: {
         Row: {
-          address_line1: string | null
-          address_line2: string | null
           bank_account_name: string | null
           bank_account_number: string | null
           bank_bic: string | null
@@ -29,13 +27,12 @@ export type Database = {
           name: string
           postal_code: string | null
           status: string
+          street_address: string | null
           tax_id: string | null
           trial_ends_at: string | null
           updated_at: string
         }
         Insert: {
-          address_line1?: string | null
-          address_line2?: string | null
           bank_account_name?: string | null
           bank_account_number?: string | null
           bank_bic?: string | null
@@ -47,13 +44,12 @@ export type Database = {
           name: string
           postal_code?: string | null
           status?: string
+          street_address?: string | null
           tax_id?: string | null
           trial_ends_at?: string | null
           updated_at?: string
         }
         Update: {
-          address_line1?: string | null
-          address_line2?: string | null
           bank_account_name?: string | null
           bank_account_number?: string | null
           bank_bic?: string | null
@@ -65,6 +61,7 @@ export type Database = {
           name?: string
           postal_code?: string | null
           status?: string
+          street_address?: string | null
           tax_id?: string | null
           trial_ends_at?: string | null
           updated_at?: string

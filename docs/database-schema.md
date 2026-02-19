@@ -56,8 +56,7 @@ Key columns:
 - `trial_ends_at timestamptz`
 - `company_registration_id text`
 - `tax_id text`
-- `address_line1 text`
-- `address_line2 text`
+- `street_address text`
 - `city text`
 - `postal_code text`
 - `country text`

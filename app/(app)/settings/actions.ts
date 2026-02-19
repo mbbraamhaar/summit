@@ -66,7 +66,7 @@ export async function updateCompany(formData: FormData) {
 
   const name = (formData.get('name') as string | null)?.trim() ?? ''
   const tax_id = formData.get('tax_id') as string
-  const address_line1 = formData.get('address_line1') as string
+  const street_address = formData.get('street_address') as string
   const city = formData.get('city') as string
   const postal_code = formData.get('postal_code') as string
   const country = formData.get('country') as string
@@ -78,7 +78,6 @@ export async function updateCompany(formData: FormData) {
   }
 
   const company_registration_id = formData.get('company_registration_id') as string | null
-  const address_line2 = formData.get('address_line2') as string | null
   const bank_bic = formData.get('bank_bic') as string | null
 
   const { error } = await supabase
@@ -87,8 +86,7 @@ export async function updateCompany(formData: FormData) {
       name,
       company_registration_id,
       tax_id,
-      address_line1,
-      address_line2,
+      street_address,
       city,
       postal_code,
       country,

@@ -36,8 +36,7 @@ Required policy fields mapped to `companies`:
 - Business registration ID: `companies.company_registration_id`
 - Billing country and address:
   - `companies.country`
-  - `companies.address_line1`
-  - `companies.address_line2` (optional)
+  - `companies.street_address`
   - `companies.city`
   - `companies.postal_code`
 

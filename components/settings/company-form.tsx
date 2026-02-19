@@ -20,8 +20,7 @@ type CompanyFormData = {
   name: string
   company_registration_id: string
   tax_id: string
-  address_line1: string
-  address_line2: string
+  street_address: string
   city: string
   postal_code: string
   country: string
@@ -57,8 +56,7 @@ export function CompanyForm({
     name: company.name || '',
     company_registration_id: company.company_registration_id || '',
     tax_id: company.tax_id || '',
-    address_line1: company.address_line1 || '',
-    address_line2: company.address_line2 || '',
+    street_address: company.street_address || '',
     city: company.city || '',
     postal_code: company.postal_code || '',
     country: company.country || '',
@@ -266,27 +264,17 @@ export function CompanyForm({
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="address_line1">Address line 1</Label>
+            <Label htmlFor="street_address">Street address</Label>
             <Input
-              id="address_line1"
-              value={formData.address_line1}
-              onChange={(e) => handleFieldChange('address_line1', e.target.value)}
-              aria-invalid={Boolean(fieldErrors.address_line1)}
+              id="street_address"
+              value={formData.street_address}
+              onChange={(e) => handleFieldChange('street_address', e.target.value)}
+              aria-invalid={Boolean(fieldErrors.street_address)}
               disabled={!canEdit}
             />
-            {fieldErrors.address_line1 && (
-              <p className="text-sm text-destructive">{fieldErrors.address_line1}</p>
+            {fieldErrors.street_address && (
+              <p className="text-sm text-destructive">{fieldErrors.street_address}</p>
             )}
-          </div>
-          
-          <div className="space-y-2">
-            <Label htmlFor="address_line2">Address line 2</Label>
-            <Input
-              id="address_line2"
-              value={formData.address_line2}
-              onChange={(e) => handleFieldChange('address_line2', e.target.value)}
-              disabled={!canEdit}
-            />
           </div>
           
           <div className="grid grid-cols-2 gap-4">

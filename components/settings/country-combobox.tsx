@@ -8,7 +8,6 @@ import {
   ComboboxList,
   ComboboxItem,
   ComboboxEmpty,
-  ComboboxCollection,
 } from '@/components/ui/combobox'
 import { COUNTRIES } from '@/lib/constants/countries'
 
@@ -28,16 +27,15 @@ export function CountryCombobox({ value, onValueChange, disabled }: CountryCombo
   const filteredCountries = COUNTRIES.filter((country) =>
     country.name.toLowerCase().includes(searchValue.toLowerCase())
   )
-  
+
   return (
     <Combobox
       open={undefined}
       onOpenChange={undefined}
       value={value}
       onValueChange={(newValue) => {
-        if (newValue) {
-          onValueChange(newValue)
-        }
+        setSearchValue('')
+        onValueChange(newValue ?? '')
       }}
       disabled={disabled}
     >
