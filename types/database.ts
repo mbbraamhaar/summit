@@ -361,6 +361,14 @@ export type Database = {
         }
         Returns: string
       }
+      evaluate_subscription_period_expiry: {
+        Args: {
+          p_company_id: string
+          p_now: string
+          p_subscription_id: string
+        }
+        Returns: string
+      }
       activate_subscription_after_first_payment: {
         Args: {
           p_company_id: string

@@ -61,7 +61,35 @@ export async function GET(request: Request) {
     return jsonError(404, 'NOT_FOUND', 'Subscription not found for this company.')
   }
 
-  const [{ data: company, error: companyError }, { data: paymentAttempt, error: attemptError }] = await Promise.all([
+  const nowIso = new Date().toISOString()
+  const { data: expiryResult, error: expiryError } = await supabase.rpc(
+    'evaluate_subscription_period_expiry',
+    {
+      p_subscription_id: subscription.id,
+      p_company_id: profile.company_id,
+      p_now: nowIso,
+    },
+  )
+
+  if (expiryError) {
+    return jsonError(500, 'CHECKOUT_STATUS_FAILED', expiryError.message)
+  }
+
+  if (expiryResult === 'canceled') {
+    console.info('mollie_subscription_period_expired_canceled', {
+      subscriptionId: subscription.id,
+      companyId: profile.company_id,
+      evaluatedAt: nowIso,
+    })
+  }
+
+  const [{ data: freshSubscription, error: freshSubscriptionError }, { data: company, error: companyError }, { data: paymentAttempt, error: attemptError }] = await Promise.all([
+    supabase
+      .from('subscriptions')
+      .select('id, status')
+      .eq('id', subscription.id)
+      .eq('company_id', profile.company_id)
+      .maybeSingle(),
     supabase
       .from('companies')
       .select('status')
@@ -77,6 +105,14 @@ export async function GET(request: Request) {
       .maybeSingle(),
   ])
 
+  if (freshSubscriptionError) {
+    return jsonError(500, 'CHECKOUT_STATUS_FAILED', freshSubscriptionError.message)
+  }
+
+  if (!freshSubscription) {
+    return jsonError(404, 'NOT_FOUND', 'Subscription not found for this company.')
+  }
+
   if (companyError) {
     return jsonError(500, 'CHECKOUT_STATUS_FAILED', companyError.message)
   }
@@ -87,8 +123,8 @@ export async function GET(request: Request) {
 
   return NextResponse.json({
     subscription: {
-      id: subscription.id,
-      status: subscription.status,
+      id: freshSubscription.id,
+      status: freshSubscription.status,
     },
     company: {
       status: company?.status ?? null,

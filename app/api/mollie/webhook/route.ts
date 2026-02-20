@@ -89,6 +89,15 @@ function parsePaymentMetadata(payment: MolliePayment): PaymentMetadata {
   }
 }
 
+function parseMollieSubscriptionId(payment: MolliePayment) {
+  const payload = payment as unknown as {
+    subscriptionId?: unknown
+    subscription_id?: unknown
+  }
+
+  return toStringValue(payload.subscriptionId) ?? toStringValue(payload.subscription_id)
+}
+
 async function extractPaymentIdFromRequest(request: Request, url: URL) {
   const rawBody = (await request.text()).trim()
   const queryPaymentId = toStringValue(url.searchParams.get('id'))
@@ -234,50 +243,58 @@ export async function POST(request: Request) {
     }
   } else {
     if (!metadata.companyId || !metadata.planId) {
-      return NextResponse.json({ received: true }, { status: 200 })
-    }
-
-    const { error: insertAttemptError } = await admin
-      .from('subscription_payment_attempts')
-      .insert({
-        company_id: metadata.companyId,
-        subscription_id: metadata.subscriptionId,
-        plan_id: metadata.planId,
-        mollie_payment_id: payment.id,
-        sequence_type: sequenceType,
-        status: payment.status,
-        amount: parseAmountValue(payment.amount?.value),
-        currency: payment.amount?.currency || 'EUR',
-        raw: payment as unknown as Json,
-      })
-
-    if (insertAttemptError) {
-      if (!isUniqueViolation(insertAttemptError)) {
-        return NextResponse.json({ error: insertAttemptError.message }, { status: 500 })
+      if (sequenceType === 'recurring') {
+        // Recurring payments can omit metadata; correlation happens later via Mollie customer id.
+        paymentAttempt = null
+      } else {
+        return NextResponse.json({ received: true }, { status: 200 })
       }
-
-      const { data: raceAttempt, error: raceAttemptError } = await admin
+    } else {
+      const { error: insertAttemptError } = await admin
         .from('subscription_payment_attempts')
-        .select('id, company_id, subscription_id, plan_id, sequence_type')
-        .eq('mollie_payment_id', payment.id)
-        .maybeSingle()
+        .insert({
+          company_id: metadata.companyId,
+          subscription_id: metadata.subscriptionId,
+          plan_id: metadata.planId,
+          mollie_payment_id: payment.id,
+          sequence_type: sequenceType,
+          status: payment.status,
+          amount: parseAmountValue(payment.amount?.value),
+          currency: payment.amount?.currency || 'EUR',
+          raw: payment as unknown as Json,
+        })
 
-      if (raceAttemptError) {
-        return NextResponse.json({ error: raceAttemptError.message }, { status: 500 })
+      if (insertAttemptError) {
+        if (!isUniqueViolation(insertAttemptError)) {
+          return NextResponse.json({ error: insertAttemptError.message }, { status: 500 })
+        }
+
+        const { data: raceAttempt, error: raceAttemptError } = await admin
+          .from('subscription_payment_attempts')
+          .select('id, company_id, subscription_id, plan_id, sequence_type')
+          .eq('mollie_payment_id', payment.id)
+          .maybeSingle()
+
+        if (raceAttemptError) {
+          return NextResponse.json({ error: raceAttemptError.message }, { status: 500 })
+        }
+
+        paymentAttempt = raceAttempt
       }
-
-      paymentAttempt = raceAttempt
     }
+
   }
 
   if (!isTerminalStatus(payment.status)) {
     return NextResponse.json({ received: true }, { status: 200 })
   }
 
-  const subscription = await getWebhookSubscription(admin, {
-    subscriptionId: paymentAttempt?.subscription_id ?? metadata.subscriptionId,
-    companyId: paymentAttempt?.company_id ?? metadata.companyId,
-  })
+  const subscription = sequenceType === 'recurring'
+    ? null
+    : await getWebhookSubscription(admin, {
+      subscriptionId: paymentAttempt?.subscription_id ?? metadata.subscriptionId,
+      companyId: paymentAttempt?.company_id ?? metadata.companyId,
+    })
 
   if (sequenceType === 'first' && TERMINAL_FAILURE_STATUSES.has(payment.status)) {
     if (!subscription) {
@@ -301,58 +318,68 @@ export async function POST(request: Request) {
   if (sequenceType === 'recurring') {
     console.info('mollie_recurring_payment_received', {
       paymentId: payment.id,
-      subscriptionId: metadata.subscriptionId ?? null,
       paymentStatus: payment.status,
     })
 
-    if (!metadata.subscriptionId || !metadata.companyId) {
-      console.info('mollie_recurring_payment_received', {
-        paymentId: payment.id,
-        subscriptionId: metadata.subscriptionId ?? null,
-        reason: 'missing_metadata',
-        hasSubscriptionId: Boolean(metadata.subscriptionId),
-        hasCompanyId: Boolean(metadata.companyId),
-      })
-      return NextResponse.json({ received: true }, { status: 200 })
-    }
-
-    const { data: recurringSubscription, error: recurringSubscriptionError } = await admin
-      .from('subscriptions')
-      .select('id, company_id, plan_id, status, mollie_customer_id, current_period_end')
-      .eq('id', metadata.subscriptionId)
-      .maybeSingle()
-
-    if (recurringSubscriptionError) {
-      return NextResponse.json({ error: recurringSubscriptionError.message }, { status: 500 })
-    }
-
-    if (!recurringSubscription) {
-      return NextResponse.json({ received: true }, { status: 200 })
-    }
-
-    if (recurringSubscription.company_id !== metadata.companyId) {
-      console.info('mollie_recurring_payment_received', {
-        paymentId: payment.id,
-        subscriptionId: recurringSubscription.id,
-        reason: 'company_mismatch',
-        expectedCompanyId: metadata.companyId,
-        receivedCompanyId: recurringSubscription.company_id,
-      })
-      return NextResponse.json({ received: true }, { status: 200 })
-    }
-
     const paymentCustomerId = toStringValue(payment.customerId)
     if (!paymentCustomerId) {
-      console.info('mollie_recurring_payment_received', {
+      console.info('mollie_recurring_skipped', {
         paymentId: payment.id,
-        subscriptionId: recurringSubscription.id,
+        subscriptionId: null,
         reason: 'missing_customer',
       })
       return NextResponse.json({ received: true }, { status: 200 })
     }
 
+    const { data: recurringSubscriptions, error: recurringSubscriptionError } = await admin
+      .from('subscriptions')
+      .select('id, company_id, plan_id, status, mollie_customer_id, mollie_subscription_id, current_period_end')
+      .eq('mollie_customer_id', paymentCustomerId)
+      .limit(2)
+
+    if (recurringSubscriptionError) {
+      return NextResponse.json({ error: recurringSubscriptionError.message }, { status: 500 })
+    }
+
+    if (!recurringSubscriptions || recurringSubscriptions.length === 0) {
+      console.info('mollie_recurring_skipped', {
+        paymentId: payment.id,
+        subscriptionId: null,
+        reason: 'subscription_not_found',
+        customerId: paymentCustomerId,
+      })
+      return NextResponse.json({ received: true }, { status: 200 })
+    }
+
+    if (recurringSubscriptions.length > 1) {
+      console.info('mollie_recurring_skipped', {
+        paymentId: payment.id,
+        subscriptionId: null,
+        reason: 'multiple_subscriptions_for_customer',
+        customerId: paymentCustomerId,
+      })
+      return NextResponse.json({ received: true }, { status: 200 })
+    }
+
+    const recurringSubscription = recurringSubscriptions[0]
+    const paymentSubscriptionId = parseMollieSubscriptionId(payment)
+    if (
+      paymentSubscriptionId
+      && recurringSubscription.mollie_subscription_id
+      && paymentSubscriptionId !== recurringSubscription.mollie_subscription_id
+    ) {
+      console.info('mollie_recurring_skipped', {
+        paymentId: payment.id,
+        subscriptionId: recurringSubscription.id,
+        reason: 'subscription_id_mismatch',
+        expectedSubscriptionId: recurringSubscription.mollie_subscription_id,
+        receivedSubscriptionId: paymentSubscriptionId,
+      })
+      return NextResponse.json({ received: true }, { status: 200 })
+    }
+
     if (!recurringSubscription.mollie_customer_id || recurringSubscription.mollie_customer_id !== paymentCustomerId) {
-      console.info('mollie_recurring_payment_received', {
+      console.info('mollie_recurring_skipped', {
         paymentId: payment.id,
         subscriptionId: recurringSubscription.id,
         reason: 'customer_mismatch',
@@ -360,6 +387,26 @@ export async function POST(request: Request) {
         receivedCustomerId: paymentCustomerId,
       })
       return NextResponse.json({ received: true }, { status: 200 })
+    }
+
+    const { error: upsertAttemptError } = await admin
+      .from('subscription_payment_attempts')
+      .upsert({
+        company_id: recurringSubscription.company_id,
+        subscription_id: recurringSubscription.id,
+        plan_id: recurringSubscription.plan_id,
+        mollie_payment_id: payment.id,
+        sequence_type: 'recurring',
+        status: payment.status,
+        amount: parseAmountValue(payment.amount?.value),
+        currency: payment.amount?.currency || 'EUR',
+        raw: payment as unknown as Json,
+      }, {
+        onConflict: 'mollie_payment_id',
+      })
+
+    if (upsertAttemptError) {
+      return NextResponse.json({ error: upsertAttemptError.message }, { status: 500 })
     }
 
     const { data: recurringPlan, error: recurringPlanError } = await admin
@@ -378,7 +425,7 @@ export async function POST(request: Request) {
 
     const currentPeriodEnd = parseIsoTimestamp(recurringSubscription.current_period_end)
     if (!currentPeriodEnd) {
-      console.info('mollie_recurring_payment_received', {
+      console.info('mollie_recurring_skipped', {
         paymentId: payment.id,
         subscriptionId: recurringSubscription.id,
         reason: 'missing_current_period_end',

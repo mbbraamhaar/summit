@@ -62,6 +62,11 @@ type CreateMollieSubscriptionInput = {
   startDate?: string
 }
 
+type CancelMollieSubscriptionInput = {
+  customerId: string
+  subscriptionId: string
+}
+
 type RequestMollieOptions = {
   idempotencyKey?: string
 }
@@ -169,6 +174,15 @@ export async function createMollieSubscription(
       }),
     },
     options,
+  )
+}
+
+export async function cancelMollieSubscription(input: CancelMollieSubscriptionInput) {
+  return requestMollie<{ id: string; status?: string }>(
+    `/customers/${input.customerId}/subscriptions/${input.subscriptionId}`,
+    {
+      method: 'DELETE',
+    },
   )
 }
 
