@@ -1,7 +1,7 @@
 # Sprint 0: Technical Foundation - Overview
 
 **Status:** In Progress (Day 7 of 10)  
-**Last Updated:** February 18, 2026
+**Last Updated:** February 20, 2026
 
 ## Overview
 
@@ -14,7 +14,7 @@ Sprint 0 establishes the core technical infrastructure for Summit: development e
 - ✅ Production-ready development environment
 - ✅ Database schema with multi-tenancy and RLS
 - ✅ Secure authentication and session management
-- ⏳ Subscription and payment infrastructure
+- ✅ Subscription and payment infrastructure
 - ⏳ Security and compliance baseline
 
 ---
@@ -27,9 +27,9 @@ Sprint 0 establishes the core technical infrastructure for Summit: development e
 - ✅ Authentication system
 - ✅ Profile management (including email change with re-verification)
 - ✅ Company membership system (member invitations + acceptance)
+- ✅ Subscription & billing core infrastructure (Mollie)
 
 ### Remaining: Days 6-10
-- ⏳ Subscription & billing (Mollie)
 - ⏳ Security & compliance
 
 ---
@@ -85,7 +85,7 @@ Sprint 0 establishes the core technical infrastructure for Summit: development e
 - Canonical tenancy and role model: `docs/development-context.md`
 - Canonical status gating and read-only rules: `docs/access-control-and-status-gating.md`
 - Canonical identity lifecycle rules: `docs/identity-and-auth.md`
-- Canonical billing/subscription authority principles: `docs/billing-and-tax-policy.md` and `docs/mollie-subscriptions.md`
+- Canonical billing/subscription lifecycle and authority: `docs/subscription-lifecycle.md` and `docs/mollie-subscriptions.md`
 
 ---
 
@@ -183,49 +183,19 @@ Sprint 0 establishes the core technical infrastructure for Summit: development e
 
 ---
 
-### 6. Subscription & Billing (Mollie) ⏳
+### 6. Subscription & Billing (Mollie) ✅
 
-**Mollie Setup:**
-- [ ] Mollie account created
-- [ ] Test API keys obtained
-- [ ] Mollie SDK installed (`@mollie/api-client`)
-- [ ] Mollie client configured (`lib/mollie/client.ts`)
+Implemented in Sprint 0:
+- [x] First-payment checkout flow with webhook-authoritative activation.
+- [x] Recurring renewal handling with idempotent processing (`processed_at`) and 7-day grace (`past_due` -> `suspended`).
+- [x] Cancel-at-period-end lifecycle (Mollie cancel + deferred entitlement cutoff at period expiry).
+- [x] End-of-period plan changes (`pending_plan_id` + Mollie subscription PATCH + renewal-time plan flip).
+- [x] Runtime-safe server routes for billing and webhook handling (`runtime = 'nodejs'`).
 
-**Subscription Flow:**
-- [ ] Pricing page showing plans
-- [ ] Subscription checkout flow
-  - [ ] Create Mollie customer
-  - [ ] Create Mollie subscription
-  - [ ] Redirect to Mollie checkout
-  - [ ] Handle return from checkout
-- [ ] Subscription confirmation page
-
-**Webhook Handler:**
-- [ ] Webhook endpoint (`/api/webhooks/mollie/route.ts`)
-- [ ] Webhook signature verification
-- [ ] Idempotent webhook processing
-- [ ] Handle payment.paid event
-- [ ] Handle subscription.created event
-- [ ] Handle subscription.updated event
-- [ ] Handle subscription.cancelled event
-- [ ] Update company status based on subscription
-
-**Billing UI:**
-- [ ] Billing page (`/billing`)
-- [ ] Current plan display
-- [ ] Subscription status display
-- [ ] Trial countdown (if in trial)
-- [ ] Upgrade/downgrade options
-- [ ] Cancel subscription (with confirmation)
-- [ ] Payment history view
-
-**Access Control:**
-- [ ] Feature gating based on company status
-- [ ] Read-only mode for suspended/past_due companies
-- [ ] Trial expiration handling
-- [ ] Subscription helper functions (`lib/subscriptions/helpers.ts`)
-
-**Estimated Time:** 2-3 days
+Reference docs:
+- `docs/subscription-lifecycle.md` (canonical state machine and invariants)
+- `docs/mollie-subscriptions.md` (Mollie integration specifics)
+- `docs/billing-and-tax-policy.md` (checkout/tax/invoice policy boundaries)
 
 ---
 

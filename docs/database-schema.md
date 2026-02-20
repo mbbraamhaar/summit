@@ -161,6 +161,9 @@ Key columns:
 - `current_period_start timestamptz`
 - `current_period_end timestamptz`
 - `cancel_at_period_end boolean default false`
+- `pending_plan_id uuid references plans(id) on delete restrict`
+- `past_due_since timestamptz`
+- `suspended_at timestamptz`
 - `mollie_subscription_id text unique`
 - `mollie_customer_id text`
 - `created_at timestamptz not null`
@@ -189,6 +192,7 @@ Key columns:
 - `amount numeric(10,2) not null`
 - `currency text not null default 'EUR'`
 - `raw jsonb`
+- `processed_at timestamptz`
 - `created_at timestamptz not null`
 - `updated_at timestamptz not null`
 
@@ -236,6 +240,24 @@ Semantics:
 
 ### `update_updated_at_column()`
 Generic timestamp-maintenance trigger function.
+
+### `activate_subscription_after_first_payment(...)`
+- Transactional first-payment activation RPC.
+- Locks target subscription row, enforces active/link guards, sets active period fields and Mollie linkage.
+- Projects entitlement to `companies.status = 'active'`.
+- Replay-safe return states include `already_active`, `already_linked`, `not_found`.
+
+### `apply_recurring_payment(...)`
+- Transactional recurring-payment state machine RPC.
+- Uses `subscription_payment_attempts.processed_at` for idempotent processing.
+- On recurring `paid`: extends period from existing `current_period_end`, clears delinquency markers, restores active projection.
+- On recurring terminal failure: applies `past_due` and 7-day grace progression to `suspended` when elapsed.
+- Applies pending end-of-period plan changes (`pending_plan_id -> plan_id`) only on successful recurring `paid`.
+
+### `evaluate_subscription_period_expiry(...)`
+- Transactional lazy expiry evaluator for cancel-at-period-end lifecycle.
+- If `cancel_at_period_end = true`, status is `active`, and `current_period_end <= now`, transitions subscription to `canceled`.
+- Projects entitlement to `companies.status = 'canceled'`.
 
 ## Triggers
 

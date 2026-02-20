@@ -19,8 +19,10 @@ Use this map to avoid duplication and drift.
   Canonical entitlement and read-only/full-access gating model.
 - `docs/billing-and-tax-policy.md`  
   Billing and tax policy decisions for checkout and invoicing behavior.
+- `docs/subscription-lifecycle.md`  
+  Canonical subscription state machine, transitions, and invariants.
 - `docs/mollie-subscriptions.md`  
-  Mollie subscription lifecycle and webhook authority principles.
+  Mollie provider integration behavior, object mapping, and webhook transport details.
 - `docs/invoice-engine-architecture.md`  
   Shared invoice engine architecture for Summit subscription invoices and future customer invoices.
 - `docs/sprint-0-overview.md`  
@@ -66,6 +68,16 @@ Authoritative for:
 Not for:
 - Canonical architecture rules (it may link to canonical docs)
 
+### 5) `docs/subscription-lifecycle.md`
+Authoritative for:
+- Subscription lifecycle state machine and transition rules
+- Billing invariants and idempotency expectations
+- Authority boundaries for webhook-driven mutation vs UX navigation
+
+Not for:
+- Provider API endpoint specifics (live in `docs/mollie-subscriptions.md`)
+- Raw SQL definitions (live in `docs/database-schema.md`)
+
 ## Canonical Cross-Cutting Decisions
 
 ### Tenancy Model (Canonical)
@@ -92,7 +104,7 @@ See full rules in `docs/access-control-and-status-gating.md`.
 - Subscription/payment truth is derived from webhook events.
 - Return URLs are UX navigation only and are not authoritative for entitlement decisions.
 
-See full lifecycle and idempotency requirements in `docs/mollie-subscriptions.md`.
+See full lifecycle and idempotency requirements in `docs/subscription-lifecycle.md`.
 
 ### Terminology (Canonical)
 - Canonical tenant term is **company**.
@@ -107,7 +119,8 @@ See full lifecycle and idempotency requirements in `docs/mollie-subscriptions.md
 | Access gate (`companies.status`) and read-only behavior | `docs/access-control-and-status-gating.md` |
 | Identity/auth lifecycle (signup, invites, password reset, email change) | `docs/identity-and-auth.md` |
 | Billing/tax policy and checkout gating | `docs/billing-and-tax-policy.md` |
-| Mollie subscription lifecycle and webhook authority | `docs/mollie-subscriptions.md` |
+| Subscription state machine, transitions, and invariants | `docs/subscription-lifecycle.md` |
+| Mollie provider integration details | `docs/mollie-subscriptions.md` |
 | Invoice engine architecture and adapter model | `docs/invoice-engine-architecture.md` |
 | Database schema, functions, triggers, RLS | `docs/database-schema.md` |
 | Product scope (v1 vs v2) | `docs/summit-features-specification.md` |
@@ -120,6 +133,7 @@ See full lifecycle and idempotency requirements in `docs/mollie-subscriptions.md
 - `docs/identity-and-auth.md`
 - `docs/access-control-and-status-gating.md`
 - `docs/billing-and-tax-policy.md`
+- `docs/subscription-lifecycle.md`
 - `docs/mollie-subscriptions.md`
 - `docs/invoice-engine-architecture.md`
 - `docs/sprint-0-overview.md`
