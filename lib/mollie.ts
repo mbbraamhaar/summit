@@ -67,6 +67,22 @@ type CancelMollieSubscriptionInput = {
   subscriptionId: string
 }
 
+type UpdateMollieSubscriptionInput = {
+  customerId: string
+  subscriptionId: string
+  patch: {
+    amount?: {
+      currency: 'EUR'
+      value: string
+    }
+    interval?: string
+    startDate?: string
+    description?: string
+    metadata?: Record<string, string>
+    webhookUrl?: string
+  }
+}
+
 type RequestMollieOptions = {
   idempotencyKey?: string
 }
@@ -183,6 +199,20 @@ export async function cancelMollieSubscription(input: CancelMollieSubscriptionIn
     {
       method: 'DELETE',
     },
+  )
+}
+
+export async function updateMollieSubscription(
+  input: UpdateMollieSubscriptionInput,
+  options?: RequestMollieOptions,
+) {
+  return requestMollie<{ id: string; status?: string }>(
+    `/customers/${input.customerId}/subscriptions/${input.subscriptionId}`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify(input.patch),
+    },
+    options,
   )
 }
 

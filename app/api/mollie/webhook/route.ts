@@ -25,9 +25,11 @@ type PaymentMetadata = {
 type ActivationRpcResult = 'activated' | 'already_active' | 'already_linked' | 'not_found'
 type RecurringRpcResult =
   | 'extended'
+  | 'extended_plan_changed'
   | 'past_due_set'
   | 'suspended'
   | 'recovered'
+  | 'recovered_plan_changed'
   | 'already_processed'
   | 'not_found'
 
@@ -457,8 +459,28 @@ export async function POST(request: Request) {
         periodStart: currentPeriodEnd.toISOString(),
         periodEnd: newPeriodEnd.toISOString(),
       })
+    } else if ((recurringResult as RecurringRpcResult) === 'extended_plan_changed') {
+      console.info('mollie_recurring_extended', {
+        paymentId: payment.id,
+        subscriptionId: recurringSubscription.id,
+        periodStart: currentPeriodEnd.toISOString(),
+        periodEnd: newPeriodEnd.toISOString(),
+      })
+      console.info('mollie_plan_change_applied', {
+        paymentId: payment.id,
+        subscriptionId: recurringSubscription.id,
+      })
     } else if ((recurringResult as RecurringRpcResult) === 'recovered') {
       console.info('mollie_recurring_recovered', {
+        paymentId: payment.id,
+        subscriptionId: recurringSubscription.id,
+      })
+    } else if ((recurringResult as RecurringRpcResult) === 'recovered_plan_changed') {
+      console.info('mollie_recurring_recovered', {
+        paymentId: payment.id,
+        subscriptionId: recurringSubscription.id,
+      })
+      console.info('mollie_plan_change_applied', {
         paymentId: payment.id,
         subscriptionId: recurringSubscription.id,
       })

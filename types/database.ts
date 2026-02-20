@@ -292,6 +292,7 @@ export type Database = {
           mollie_customer_id: string | null
           mollie_subscription_id: string | null
           past_due_since: string | null
+          pending_plan_id: string | null
           plan_id: string
           suspended_at: string | null
           status: string
@@ -307,6 +308,7 @@ export type Database = {
           mollie_customer_id?: string | null
           mollie_subscription_id?: string | null
           past_due_since?: string | null
+          pending_plan_id?: string | null
           plan_id: string
           suspended_at?: string | null
           status: string
@@ -322,6 +324,7 @@ export type Database = {
           mollie_customer_id?: string | null
           mollie_subscription_id?: string | null
           past_due_since?: string | null
+          pending_plan_id?: string | null
           plan_id?: string
           suspended_at?: string | null
           status?: string

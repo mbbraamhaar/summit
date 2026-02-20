@@ -48,7 +48,7 @@ export async function GET(request: Request) {
 
   const { data: subscription, error: subscriptionError } = await supabase
     .from('subscriptions')
-    .select('id, company_id, status')
+    .select('id, company_id, status, plan_id, pending_plan_id, current_period_end')
     .eq('id', parsed.data.subscriptionId)
     .eq('company_id', profile.company_id)
     .maybeSingle()
@@ -86,7 +86,7 @@ export async function GET(request: Request) {
   const [{ data: freshSubscription, error: freshSubscriptionError }, { data: company, error: companyError }, { data: paymentAttempt, error: attemptError }] = await Promise.all([
     supabase
       .from('subscriptions')
-      .select('id, status')
+      .select('id, status, plan_id, pending_plan_id, current_period_end')
       .eq('id', subscription.id)
       .eq('company_id', profile.company_id)
       .maybeSingle(),
@@ -125,6 +125,9 @@ export async function GET(request: Request) {
     subscription: {
       id: freshSubscription.id,
       status: freshSubscription.status,
+      planId: freshSubscription.plan_id,
+      pendingPlanId: freshSubscription.pending_plan_id,
+      effectiveAt: freshSubscription.current_period_end,
     },
     company: {
       status: company?.status ?? null,
