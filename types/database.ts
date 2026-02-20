@@ -340,6 +340,17 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      activate_subscription_after_first_payment: {
+        Args: {
+          p_company_id: string
+          p_mollie_customer_id: string
+          p_mollie_subscription_id: string
+          p_period_end: string
+          p_period_start: string
+          p_subscription_id: string
+        }
+        Returns: string
+      }
       accept_invitation: {
         Args: {
           invite_token: string

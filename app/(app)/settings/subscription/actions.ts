@@ -20,9 +20,15 @@ type SubscriptionCompanyIdentity = Pick<
 
 type SubscriptionPlan = Pick<Tables<'plans'>, 'id' | 'name' | 'description' | 'price' | 'interval' | 'features'>
 
+type SubscriptionPlanOptions = {
+  monthly: SubscriptionPlan | null
+  yearly: SubscriptionPlan | null
+}
+
 type SubscriptionSignupState = {
   company: SubscriptionCompanyIdentity
-  plans: SubscriptionPlan[]
+  plan_options: SubscriptionPlanOptions
+  selected_plan: SubscriptionPlan | null
   requirements: ReturnType<typeof resolveSubscriptionRequirements>
 }
 
@@ -62,6 +68,7 @@ const PLAN_SELECT = `
 const countryCodeSet = new Set(COUNTRIES.map((country) => country.code))
 
 const updateSchema = z.object({
+  plan_id: z.string().uuid(),
   street_address: z.string().trim(),
   city: z.string().trim(),
   postal_code: z.string().trim(),
@@ -70,25 +77,49 @@ const updateSchema = z.object({
   company_registration_id: z.string().trim().optional(),
 })
 
+const getStateSchema = z.object({
+  plan_id: z.string().uuid().optional(),
+})
+
 function normalizeNullableString(value: string | null | undefined) {
   const normalized = value?.trim() ?? ''
   return normalized.length > 0 ? normalized : null
 }
 
+function getSelectedPlan(
+  planOptions: SubscriptionPlanOptions,
+  planId: string | null | undefined,
+) {
+  if (!planId) {
+    return null
+  }
+
+  if (planOptions.monthly?.id === planId) {
+    return planOptions.monthly
+  }
+
+  if (planOptions.yearly?.id === planId) {
+    return planOptions.yearly
+  }
+
+  return null
+}
+
 function buildState(
   company: SubscriptionCompanyIdentity,
-  plans: SubscriptionPlan[],
+  planOptions: SubscriptionPlanOptions,
+  selectedPlanId?: string | null,
 ): SubscriptionSignupState {
   return {
     company,
-    plans,
+    plan_options: planOptions,
+    selected_plan: getSelectedPlan(planOptions, selectedPlanId),
     requirements: resolveSubscriptionRequirements(company),
   }
 }
 
 function mapRequirementErrors(requirements: ReturnType<typeof resolveSubscriptionRequirements>) {
   const fieldErrors: Record<string, string> = {}
-  let formError: string | undefined
 
   requirements.ordered_requirements.forEach((requirement) => {
     switch (requirement.blocking_reason) {
@@ -116,9 +147,6 @@ function mapRequirementErrors(requirements: ReturnType<typeof resolveSubscriptio
       case 'INVALID_BUSINESS_REGISTRATION_FORMAT':
         fieldErrors.company_registration_id = 'Invalid business registration format'
         break
-      case 'REQUIRES_VIES_VALIDATION':
-        formError = 'VIES validation required'
-        break
       default:
         break
     }
@@ -126,7 +154,7 @@ function mapRequirementErrors(requirements: ReturnType<typeof resolveSubscriptio
 
   return {
     fieldErrors,
-    formError,
+    formError: undefined,
   }
 }
 
@@ -151,7 +179,7 @@ async function loadCompanyIdentity(
   return { company: company as SubscriptionCompanyIdentity, error: null }
 }
 
-async function loadActivePlans(
+async function loadActivePlanOptions(
   supabase: Awaited<ReturnType<typeof getProfileOrRedirect>>['supabase'],
 ) {
   const { data: plans, error } = await supabase
@@ -162,41 +190,66 @@ async function loadActivePlans(
     .order('interval', { ascending: true })
 
   if (error) {
-    return { plans: null, error: error.message }
+    return { planOptions: null, error: error.message }
   }
 
+  const normalizedPlans = ((plans ?? []) as SubscriptionPlan[]).map((plan) => ({
+    ...plan,
+    features: (plan.features ?? null) as Json,
+  }))
+
   return {
-    plans: ((plans ?? []) as SubscriptionPlan[]).map((plan) => ({
-      ...plan,
-      features: (plan.features ?? null) as Json,
-    })),
+    planOptions: {
+      monthly: normalizedPlans.find((plan) => plan.interval === 'month') ?? null,
+      yearly: normalizedPlans.find((plan) => plan.interval === 'year') ?? null,
+    } satisfies SubscriptionPlanOptions,
     error: null,
   }
 }
 
-export async function getSubscriptionSignupState(): Promise<SubscriptionSignupStateResult> {
+export async function getSubscriptionSignupState(
+  payload: unknown = {},
+): Promise<SubscriptionSignupStateResult> {
   const { supabase, profile } = await getProfileOrRedirect()
 
   if (profile.role !== 'owner') {
     return { success: false, error: 'Only owners can manage subscription signup' }
   }
 
-  const [{ company, error: companyError }, { plans, error: plansError }] = await Promise.all([
+  const parsedPayload = getStateSchema.safeParse(payload)
+  if (!parsedPayload.success) {
+    return {
+      success: false,
+      error: parsedPayload.error.issues[0]?.message ?? 'Invalid payload',
+    }
+  }
+
+  const [{ company, error: companyError }, { planOptions, error: plansError }] = await Promise.all([
     loadCompanyIdentity(supabase, profile.company_id),
-    loadActivePlans(supabase),
+    loadActivePlanOptions(supabase),
   ])
 
   if (companyError || !company) {
     return { success: false, error: companyError ?? 'Company not found' }
   }
 
-  if (plansError || !plans) {
+  if (plansError || !planOptions) {
     return { success: false, error: plansError ?? 'Plans not found' }
+  }
+
+  if (!planOptions.monthly || !planOptions.yearly) {
+    return { success: false, error: 'Monthly and yearly plans must be configured' }
+  }
+
+  const selectedPlanId = parsedPayload.data.plan_id ?? null
+  const selectedPlan = getSelectedPlan(planOptions, selectedPlanId)
+  if (selectedPlanId && !selectedPlan) {
+    return { success: false, error: 'Selected plan not found' }
   }
 
   return {
     success: true,
-    state: buildState(company, plans),
+    state: buildState(company, planOptions, selectedPlanId),
   }
 }
 
@@ -217,17 +270,32 @@ export async function updateCompanyForSubscriptionSignup(
     }
   }
 
-  const [{ company: existingCompany, error: companyError }, { plans, error: plansError }] = await Promise.all([
+  const [{ company: existingCompany, error: companyError }, { planOptions, error: plansError }] = await Promise.all([
     loadCompanyIdentity(supabase, profile.company_id),
-    loadActivePlans(supabase),
+    loadActivePlanOptions(supabase),
   ])
 
   if (companyError || !existingCompany) {
     return { success: false, error: companyError ?? 'Company not found' }
   }
 
-  if (plansError || !plans) {
+  if (plansError || !planOptions) {
     return { success: false, error: plansError ?? 'Plans not found' }
+  }
+
+  if (!planOptions.monthly || !planOptions.yearly) {
+    return { success: false, error: 'Monthly and yearly plans must be configured' }
+  }
+
+  const selectedPlanId = parsedPayload.data.plan_id ?? null
+  const selectedPlan = getSelectedPlan(planOptions, selectedPlanId)
+  if (selectedPlanId && !selectedPlan) {
+    return {
+      success: false,
+      error: 'Selected plan not found',
+      formError: 'Selected plan not found',
+      state: buildState(existingCompany, planOptions),
+    }
   }
 
   const normalizedCountry = normalizeNullableString(parsedPayload.data.country)?.toUpperCase() ?? ''
@@ -281,7 +349,7 @@ export async function updateCompanyForSubscriptionSignup(
   }
 
   revalidatePath('/settings')
-  const state = buildState(updatedCompany, plans)
+  const state = buildState(updatedCompany, planOptions, selectedPlanId)
 
   if (requirementErrors.formError) {
     return {

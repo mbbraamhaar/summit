@@ -7,7 +7,6 @@ export type RequirementKey =
   | 'POSTAL_CODE'
   | 'VAT_ID'
   | 'BUSINESS_REGISTRATION_ID'
-  | 'VIES_VALIDATION'
 
 export type Requirement = {
   key: RequirementKey
@@ -157,16 +156,8 @@ export function resolveSubscriptionRequirements(company: SubscriptionCompany) {
       }
     }
 
-    if (is_eu_non_nl) {
-      ordered_requirements.push({
-        key: 'VIES_VALIDATION',
-        title: 'VAT validation',
-        description: 'VAT validation required',
-        fields: ['tax_id'],
-        // TODO(Slice 2): implement VIES validation check + persistence and remove unconditional block.
-        blocking_reason: 'REQUIRES_VIES_VALIDATION',
-      })
-    }
+    // VIES validation is intentionally deferred to a later slice.
+    // Slice 1.5 readiness only enforces presence and local format checks.
   }
 
   if (is_non_eu) {

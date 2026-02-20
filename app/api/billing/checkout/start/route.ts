@@ -4,6 +4,8 @@ import { createMollieCustomer, createMolliePayment, isMollieApiError } from '@/l
 import { createClient } from '@/lib/supabase/server'
 import { type Json, type TablesInsert } from '@/types/database'
 
+export const runtime = 'nodejs'
+
 const requestSchema = z.object({
   planId: z.string().uuid(),
 })

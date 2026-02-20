@@ -75,7 +75,7 @@ test('NL VAT valid and address complete returns ready', () => {
   expect(result.ordered_requirements).toEqual([])
 })
 
-test('EU non-NL remains blocked on VIES even with valid VAT format', () => {
+test('EU non-NL VAT format valid and address complete returns ready', () => {
   const result = resolveSubscriptionRequirements({
     country: 'DE',
     ...completeAddress,
@@ -83,10 +83,8 @@ test('EU non-NL remains blocked on VIES even with valid VAT format', () => {
     company_registration_id: null,
   })
 
-  expect(result.is_ready).toBe(false)
-  expect(result.ordered_requirements.map((requirement) => requirement.blocking_reason)).toEqual([
-    'REQUIRES_VIES_VALIDATION',
-  ])
+  expect(result.is_ready).toBe(true)
+  expect(result.ordered_requirements).toEqual([])
 })
 
 test('non-EU requires business registration and invalid format blocks', () => {

@@ -3,7 +3,6 @@
 import { useSearchParams } from 'next/navigation'
 import { Tables } from '@/types/database'
 import {
-  SubscriptionFlowInterval,
   SubscriptionFlowStep,
   SubscriptionSignupFlow,
 } from '@/components/settings/subscription-signup-flow'
@@ -17,6 +16,8 @@ interface SubscriptionTabProps {
   userRole: string
 }
 
+type SubscriptionCheckoutStatus = 'processing' | null
+
 function normalizeStep(step: string | null): SubscriptionFlowStep {
   if (step === 'billing' || step === 'payment') {
     return step
@@ -25,25 +26,38 @@ function normalizeStep(step: string | null): SubscriptionFlowStep {
   return 'plan'
 }
 
-function normalizeInterval(interval: string | null): SubscriptionFlowInterval {
-  if (interval === 'yearly') {
-    return 'yearly'
+function normalizePlanId(planId: string | null) {
+  if (!planId) {
+    return null
   }
 
-  return 'monthly'
+  // Keep URL parsing lenient but avoid passing obviously invalid identifiers to the server action.
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(planId)
+    ? planId
+    : null
+}
+
+function normalizeCheckoutStatus(status: string | null): SubscriptionCheckoutStatus {
+  if (status === 'processing') {
+    return 'processing'
+  }
+
+  return null
 }
 
 export function SubscriptionTab({ subscription, userRole }: SubscriptionTabProps) {
   void subscription
   const searchParams = useSearchParams()
   const step = normalizeStep(searchParams.get('step'))
-  const interval = normalizeInterval(searchParams.get('interval'))
+  const planId = normalizePlanId(searchParams.get('plan_id'))
+  const checkoutStatus = normalizeCheckoutStatus(searchParams.get('checkout'))
 
   return (
     <SubscriptionSignupFlow
       isOwner={userRole === 'owner'}
       step={step}
-      initialInterval={interval}
+      selectedPlanId={planId}
+      checkoutStatus={checkoutStatus}
     />
   )
 }
