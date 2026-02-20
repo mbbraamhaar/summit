@@ -8,6 +8,8 @@ import {
 import { createAdminClient } from '@/lib/supabase/admin'
 import { type Json } from '@/types/database'
 
+export const runtime = 'nodejs'
+
 const TERMINAL_FAILURE_STATUSES = new Set(['failed', 'expired', 'canceled'])
 const TERMINAL_SUCCESS_STATUS = 'paid'
 
@@ -19,6 +21,8 @@ type PaymentMetadata = {
   planId: string | null
   interval: string | null
 }
+
+type ActivationRpcResult = 'activated' | 'already_active' | 'already_linked' | 'not_found'
 
 function toStringValue(value: unknown) {
   return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null
@@ -52,6 +56,19 @@ function mapPlanIntervalToMollie(interval: string) {
   return interval === 'year' ? '12 months' : '1 month'
 }
 
+function parseIsoTimestamp(value: string | null) {
+  if (!value) {
+    return null
+  }
+
+  const parsed = new Date(value)
+  return Number.isNaN(parsed.getTime()) ? null : parsed
+}
+
+function isUniqueViolation(error: { code?: string } | null) {
+  return error?.code === '23505'
+}
+
 function parsePaymentMetadata(payment: MolliePayment): PaymentMetadata {
   const metadata = payment.metadata && typeof payment.metadata === 'object'
     ? payment.metadata
@@ -65,31 +82,36 @@ function parsePaymentMetadata(payment: MolliePayment): PaymentMetadata {
   }
 }
 
-async function extractPaymentIdFromRequest(request: Request) {
+async function extractPaymentIdFromRequest(request: Request, url: URL) {
   const rawBody = (await request.text()).trim()
-  if (!rawBody) {
-    return null
-  }
+  const queryPaymentId = toStringValue(url.searchParams.get('id'))
 
-  const params = new URLSearchParams(rawBody)
-  const formPaymentId = params.get('id')
-  if (formPaymentId) {
-    return formPaymentId
-  }
-
-  try {
-    const json = JSON.parse(rawBody) as unknown
-    if (json && typeof json === 'object' && 'id' in json) {
-      const candidate = (json as { id?: unknown }).id
-      if (typeof candidate === 'string' && candidate.trim().length > 0) {
-        return candidate.trim()
-      }
+  if (rawBody) {
+    const params = new URLSearchParams(rawBody)
+    const formPaymentId = toStringValue(params.get('id'))
+    if (formPaymentId) {
+      return formPaymentId
     }
-  } catch {
-    // Ignore and continue.
+
+    try {
+      const json = JSON.parse(rawBody) as unknown
+      if (json && typeof json === 'object' && 'id' in json) {
+        const candidate = (json as { id?: unknown }).id
+        const jsonPaymentId = toStringValue(candidate)
+        if (jsonPaymentId) {
+          return jsonPaymentId
+        }
+      }
+    } catch {
+      // Ignore and continue.
+    }
+
+    if (rawBody.startsWith('tr_')) {
+      return rawBody
+    }
   }
 
-  return rawBody.startsWith('tr_') ? rawBody : null
+  return queryPaymentId
 }
 
 async function getWebhookSubscription(
@@ -147,20 +169,32 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const paymentId = await extractPaymentIdFromRequest(request)
+  const paymentId = await extractPaymentIdFromRequest(request, url)
   if (!paymentId) {
     return NextResponse.json({ error: 'Missing payment id' }, { status: 400 })
   }
+
+  console.info('mollie_webhook_received', { paymentId })
 
   let payment: MolliePayment
   try {
     payment = await getMolliePayment(paymentId)
   } catch (error) {
+    console.error('mollie_webhook_payment_fetch_failed', {
+      paymentId,
+      error: isMollieApiError(error) ? error.message : 'Failed to load payment from Mollie',
+    })
     return NextResponse.json(
       { error: isMollieApiError(error) ? error.message : 'Failed to load payment from Mollie' },
-      { status: 502 },
+      { status: 500 },
     )
   }
+
+  console.info('mollie_webhook_payment_status_fetched', {
+    paymentId: payment.id,
+    paymentStatus: payment.status,
+    sequenceType: payment.sequenceType ?? 'first',
+  })
 
   const metadata = parsePaymentMetadata(payment)
   const admin = createAdminClient()
@@ -175,17 +209,18 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: existingAttemptError.message }, { status: 500 })
   }
 
-  const sequenceType = existingAttempt?.sequence_type ?? mapSequenceType(payment.sequenceType)
+  let paymentAttempt = existingAttempt
+  const sequenceType = paymentAttempt?.sequence_type ?? mapSequenceType(payment.sequenceType)
 
-  if (existingAttempt) {
+  if (paymentAttempt) {
     const { error: updateAttemptError } = await admin
       .from('subscription_payment_attempts')
       .update({
         status: payment.status,
         raw: payment as unknown as Json,
-        subscription_id: existingAttempt.subscription_id ?? metadata.subscriptionId,
+        subscription_id: paymentAttempt.subscription_id ?? metadata.subscriptionId,
       })
-      .eq('id', existingAttempt.id)
+      .eq('id', paymentAttempt.id)
 
     if (updateAttemptError) {
       return NextResponse.json({ error: updateAttemptError.message }, { status: 500 })
@@ -210,7 +245,21 @@ export async function POST(request: Request) {
       })
 
     if (insertAttemptError) {
-      return NextResponse.json({ error: insertAttemptError.message }, { status: 500 })
+      if (!isUniqueViolation(insertAttemptError)) {
+        return NextResponse.json({ error: insertAttemptError.message }, { status: 500 })
+      }
+
+      const { data: raceAttempt, error: raceAttemptError } = await admin
+        .from('subscription_payment_attempts')
+        .select('id, company_id, subscription_id, plan_id, sequence_type')
+        .eq('mollie_payment_id', payment.id)
+        .maybeSingle()
+
+      if (raceAttemptError) {
+        return NextResponse.json({ error: raceAttemptError.message }, { status: 500 })
+      }
+
+      paymentAttempt = raceAttempt
     }
   }
 
@@ -219,8 +268,8 @@ export async function POST(request: Request) {
   }
 
   const subscription = await getWebhookSubscription(admin, {
-    subscriptionId: existingAttempt?.subscription_id ?? metadata.subscriptionId,
-    companyId: existingAttempt?.company_id ?? metadata.companyId,
+    subscriptionId: paymentAttempt?.subscription_id ?? metadata.subscriptionId,
+    companyId: paymentAttempt?.company_id ?? metadata.companyId,
   })
 
   if (!subscription) {
@@ -246,10 +295,83 @@ export async function POST(request: Request) {
     return NextResponse.json({ received: true }, { status: 200 })
   }
 
+  if (!metadata.subscriptionId || !metadata.companyId) {
+    console.info('mollie_webhook_activation_skipped', {
+      paymentId: payment.id,
+      subscriptionId: metadata.subscriptionId ?? null,
+      reason: 'missing_metadata',
+      hasSubscriptionId: Boolean(metadata.subscriptionId),
+      hasCompanyId: Boolean(metadata.companyId),
+    })
+    return NextResponse.json({ received: true }, { status: 200 })
+  }
+
+  const { data: activationSubscription, error: activationSubscriptionError } = await admin
+    .from('subscriptions')
+    .select('id, company_id, plan_id, status, mollie_subscription_id, mollie_customer_id, current_period_start, current_period_end')
+    .eq('id', metadata.subscriptionId)
+    .maybeSingle()
+
+  if (activationSubscriptionError) {
+    return NextResponse.json({ error: activationSubscriptionError.message }, { status: 500 })
+  }
+
+  if (!activationSubscription) {
+    return NextResponse.json({ received: true }, { status: 200 })
+  }
+
+  if (activationSubscription.company_id !== metadata.companyId) {
+    console.info('mollie_webhook_activation_skipped', {
+      paymentId: payment.id,
+      subscriptionId: activationSubscription.id,
+      reason: 'company_mismatch',
+      expectedCompanyId: metadata.companyId,
+      receivedCompanyId: activationSubscription.company_id,
+    })
+    return NextResponse.json({ received: true }, { status: 200 })
+  }
+
+  const paymentCustomerId = toStringValue(payment.customerId)
+  if (!paymentCustomerId) {
+    console.info('mollie_webhook_activation_skipped', {
+      paymentId: payment.id,
+      subscriptionId: activationSubscription.id,
+      reason: 'missing_customer',
+    })
+    return NextResponse.json({ received: true }, { status: 200 })
+  }
+
+  let customerId = activationSubscription.mollie_customer_id
+  if (customerId && customerId !== paymentCustomerId) {
+    console.info('mollie_webhook_activation_skipped', {
+      paymentId: payment.id,
+      subscriptionId: activationSubscription.id,
+      reason: 'customer_mismatch',
+      expectedCustomerId: customerId,
+      receivedCustomerId: paymentCustomerId,
+    })
+    return NextResponse.json({ received: true }, { status: 200 })
+  }
+
+  if (!customerId) {
+    const { error: updateCustomerError } = await admin
+      .from('subscriptions')
+      .update({
+        mollie_customer_id: paymentCustomerId,
+      })
+      .eq('id', activationSubscription.id)
+
+    if (updateCustomerError) {
+      return NextResponse.json({ error: updateCustomerError.message }, { status: 500 })
+    }
+
+    customerId = paymentCustomerId
+  }
+
   const { data: plan, error: planError } = await admin
     .from('plans')
     .select('id, name, price, interval')
-    .eq('id', subscription.plan_id)
+    .eq('id', activationSubscription.plan_id)
     .maybeSingle()
 
   if (planError) {
@@ -260,16 +382,49 @@ export async function POST(request: Request) {
     return NextResponse.json({ received: true }, { status: 200 })
   }
 
-  const customerId = subscription.mollie_customer_id ?? payment.customerId ?? null
-  if (!customerId) {
-    return NextResponse.json({ error: 'Mollie customer is missing on subscription' }, { status: 500 })
+  const expectedCurrency = 'EUR'
+  const receivedCurrency = toStringValue(payment.amount?.currency)?.toUpperCase() ?? null
+  const expectedAmount = Number(Number(plan.price).toFixed(2))
+  const receivedAmount = parseAmountValue(payment.amount?.value)
+  if (receivedCurrency !== expectedCurrency || receivedAmount !== expectedAmount) {
+    console.info('mollie_webhook_activation_skipped', {
+      paymentId: payment.id,
+      subscriptionId: activationSubscription.id,
+      reason: 'amount_mismatch',
+      expectedCurrency,
+      receivedCurrency,
+      expectedAmount,
+      receivedAmount,
+    })
+    return NextResponse.json({ received: true }, { status: 200 })
   }
 
-  let mollieSubscriptionId = subscription.mollie_subscription_id
-  const periodStart = new Date()
-  const periodEnd = addBillingInterval(periodStart, plan.interval)
+  if (activationSubscription.status === 'active') {
+    console.info('mollie_webhook_activation_skipped', {
+      paymentId: payment.id,
+      subscriptionId: activationSubscription.id,
+      reason: 'already_active',
+    })
+    return NextResponse.json({ received: true }, { status: 200 })
+  }
 
-  if (!mollieSubscriptionId) {
+  const periodStart = parseIsoTimestamp(activationSubscription.current_period_start) ?? new Date()
+  const periodEnd =
+    parseIsoTimestamp(activationSubscription.current_period_end) ?? addBillingInterval(periodStart, plan.interval)
+
+  let mollieSubscriptionId = activationSubscription.mollie_subscription_id
+  const shouldCreateMollieSubscription =
+    activationSubscription.status !== 'active' && activationSubscription.mollie_subscription_id === null
+
+  if (!shouldCreateMollieSubscription) {
+    console.info('mollie_webhook_activation_skipped', {
+      paymentId: payment.id,
+      subscriptionId: activationSubscription.id,
+      reason: 'mollie_subscription_already_linked',
+    })
+  }
+
+  if (shouldCreateMollieSubscription) {
     try {
       const createdSubscription = await createMollieSubscription(
         {
@@ -282,8 +437,8 @@ export async function POST(request: Request) {
           description: `Summit ${plan.name} (${plan.interval})`,
           webhookUrl: `${appUrl}/api/mollie/webhook?secret=${encodeURIComponent(expectedSecret)}`,
           metadata: {
-            companyId: subscription.company_id,
-            subscriptionId: subscription.id,
+            companyId: activationSubscription.company_id,
+            subscriptionId: activationSubscription.id,
             planId: plan.id,
           },
           startDate: toIsoDate(periodEnd),
@@ -292,6 +447,23 @@ export async function POST(request: Request) {
           idempotencyKey: `summit-first-payment-${payment.id}`,
         },
       )
+      const { error: persistSubscriptionLinkError } = await admin
+        .from('subscriptions')
+        .update({
+          mollie_subscription_id: createdSubscription.id,
+        })
+        .eq('id', activationSubscription.id)
+
+      if (persistSubscriptionLinkError) {
+        console.error('mollie_webhook_subscription_link_persist_failed', {
+          paymentId: payment.id,
+          subscriptionId: activationSubscription.id,
+          mollieSubscriptionId: createdSubscription.id,
+          error: persistSubscriptionLinkError.message,
+        })
+        return NextResponse.json({ error: persistSubscriptionLinkError.message }, { status: 500 })
+      }
+
       mollieSubscriptionId = createdSubscription.id
     } catch (error) {
       return NextResponse.json(
@@ -301,34 +473,47 @@ export async function POST(request: Request) {
     }
   }
 
-  const periodStartValue = subscription.current_period_start ?? periodStart.toISOString()
-  const periodEndValue = subscription.current_period_end ?? periodEnd.toISOString()
-
-  const { error: activateSubscriptionError } = await admin
-    .from('subscriptions')
-    .update({
-      status: 'active',
-      current_period_start: periodStartValue,
-      current_period_end: periodEndValue,
-      mollie_subscription_id: mollieSubscriptionId,
-      mollie_customer_id: customerId,
-      cancel_at_period_end: false,
-    })
-    .eq('id', subscription.id)
-
-  if (activateSubscriptionError) {
-    return NextResponse.json({ error: activateSubscriptionError.message }, { status: 500 })
+  if (!mollieSubscriptionId) {
+    return NextResponse.json({ error: 'Mollie subscription is missing on activation' }, { status: 500 })
   }
 
-  const { error: activateCompanyError } = await admin
-    .from('companies')
-    .update({
-      status: 'active',
-    })
-    .eq('id', subscription.company_id)
+  const periodStartValue = periodStart.toISOString()
+  const periodEndValue = periodEnd.toISOString()
 
-  if (activateCompanyError) {
-    return NextResponse.json({ error: activateCompanyError.message }, { status: 500 })
+  const { data: activationResult, error: activationError } = await admin.rpc(
+    'activate_subscription_after_first_payment',
+    {
+      p_subscription_id: activationSubscription.id,
+      p_company_id: activationSubscription.company_id,
+      p_mollie_subscription_id: mollieSubscriptionId,
+      p_mollie_customer_id: customerId,
+      p_period_start: periodStartValue,
+      p_period_end: periodEndValue,
+    },
+  )
+
+  if (activationError) {
+    return NextResponse.json({ error: activationError.message }, { status: 500 })
+  }
+
+  if (activationResult === 'activated') {
+    console.info('mollie_webhook_activation_executed', {
+      paymentId: payment.id,
+      subscriptionId: activationSubscription.id,
+      mollieSubscriptionId,
+    })
+  } else if ((activationResult as ActivationRpcResult) === 'already_active') {
+    console.info('mollie_webhook_activation_skipped', {
+      paymentId: payment.id,
+      subscriptionId: activationSubscription.id,
+      reason: 'already_active',
+    })
+  } else if ((activationResult as ActivationRpcResult) === 'already_linked') {
+    console.info('mollie_webhook_activation_skipped', {
+      paymentId: payment.id,
+      subscriptionId: activationSubscription.id,
+      reason: 'already_linked',
+    })
   }
 
   return NextResponse.json({ received: true }, { status: 200 })
