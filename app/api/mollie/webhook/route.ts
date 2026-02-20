@@ -23,6 +23,13 @@ type PaymentMetadata = {
 }
 
 type ActivationRpcResult = 'activated' | 'already_active' | 'already_linked' | 'not_found'
+type RecurringRpcResult =
+  | 'extended'
+  | 'past_due_set'
+  | 'suspended'
+  | 'recovered'
+  | 'already_processed'
+  | 'not_found'
 
 function toStringValue(value: unknown) {
   return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null
@@ -272,11 +279,11 @@ export async function POST(request: Request) {
     companyId: paymentAttempt?.company_id ?? metadata.companyId,
   })
 
-  if (!subscription) {
-    return NextResponse.json({ received: true }, { status: 200 })
-  }
-
   if (sequenceType === 'first' && TERMINAL_FAILURE_STATUSES.has(payment.status)) {
+    if (!subscription) {
+      return NextResponse.json({ received: true }, { status: 200 })
+    }
+
     const { error: pendingError } = await admin
       .from('subscriptions')
       .update({
@@ -286,6 +293,143 @@ export async function POST(request: Request) {
 
     if (pendingError) {
       return NextResponse.json({ error: pendingError.message }, { status: 500 })
+    }
+
+    return NextResponse.json({ received: true }, { status: 200 })
+  }
+
+  if (sequenceType === 'recurring') {
+    console.info('mollie_recurring_payment_received', {
+      paymentId: payment.id,
+      subscriptionId: metadata.subscriptionId ?? null,
+      paymentStatus: payment.status,
+    })
+
+    if (!metadata.subscriptionId || !metadata.companyId) {
+      console.info('mollie_recurring_payment_received', {
+        paymentId: payment.id,
+        subscriptionId: metadata.subscriptionId ?? null,
+        reason: 'missing_metadata',
+        hasSubscriptionId: Boolean(metadata.subscriptionId),
+        hasCompanyId: Boolean(metadata.companyId),
+      })
+      return NextResponse.json({ received: true }, { status: 200 })
+    }
+
+    const { data: recurringSubscription, error: recurringSubscriptionError } = await admin
+      .from('subscriptions')
+      .select('id, company_id, plan_id, status, mollie_customer_id, current_period_end')
+      .eq('id', metadata.subscriptionId)
+      .maybeSingle()
+
+    if (recurringSubscriptionError) {
+      return NextResponse.json({ error: recurringSubscriptionError.message }, { status: 500 })
+    }
+
+    if (!recurringSubscription) {
+      return NextResponse.json({ received: true }, { status: 200 })
+    }
+
+    if (recurringSubscription.company_id !== metadata.companyId) {
+      console.info('mollie_recurring_payment_received', {
+        paymentId: payment.id,
+        subscriptionId: recurringSubscription.id,
+        reason: 'company_mismatch',
+        expectedCompanyId: metadata.companyId,
+        receivedCompanyId: recurringSubscription.company_id,
+      })
+      return NextResponse.json({ received: true }, { status: 200 })
+    }
+
+    const paymentCustomerId = toStringValue(payment.customerId)
+    if (!paymentCustomerId) {
+      console.info('mollie_recurring_payment_received', {
+        paymentId: payment.id,
+        subscriptionId: recurringSubscription.id,
+        reason: 'missing_customer',
+      })
+      return NextResponse.json({ received: true }, { status: 200 })
+    }
+
+    if (!recurringSubscription.mollie_customer_id || recurringSubscription.mollie_customer_id !== paymentCustomerId) {
+      console.info('mollie_recurring_payment_received', {
+        paymentId: payment.id,
+        subscriptionId: recurringSubscription.id,
+        reason: 'customer_mismatch',
+        expectedCustomerId: recurringSubscription.mollie_customer_id,
+        receivedCustomerId: paymentCustomerId,
+      })
+      return NextResponse.json({ received: true }, { status: 200 })
+    }
+
+    const { data: recurringPlan, error: recurringPlanError } = await admin
+      .from('plans')
+      .select('id, interval')
+      .eq('id', recurringSubscription.plan_id)
+      .maybeSingle()
+
+    if (recurringPlanError) {
+      return NextResponse.json({ error: recurringPlanError.message }, { status: 500 })
+    }
+
+    if (!recurringPlan) {
+      return NextResponse.json({ received: true }, { status: 200 })
+    }
+
+    const currentPeriodEnd = parseIsoTimestamp(recurringSubscription.current_period_end)
+    if (!currentPeriodEnd) {
+      console.info('mollie_recurring_payment_received', {
+        paymentId: payment.id,
+        subscriptionId: recurringSubscription.id,
+        reason: 'missing_current_period_end',
+      })
+      return NextResponse.json({ received: true }, { status: 200 })
+    }
+
+    const newPeriodEnd = addBillingInterval(currentPeriodEnd, recurringPlan.interval)
+    const nowIso = new Date().toISOString()
+
+    const { data: recurringResult, error: recurringError } = await admin.rpc('apply_recurring_payment', {
+      p_subscription_id: recurringSubscription.id,
+      p_company_id: recurringSubscription.company_id,
+      p_payment_id: payment.id,
+      p_payment_status: payment.status,
+      p_period_start: currentPeriodEnd.toISOString(),
+      p_period_end: newPeriodEnd.toISOString(),
+      p_now: nowIso,
+    })
+
+    if (recurringError) {
+      return NextResponse.json({ error: recurringError.message }, { status: 500 })
+    }
+
+    if ((recurringResult as RecurringRpcResult) === 'extended') {
+      console.info('mollie_recurring_extended', {
+        paymentId: payment.id,
+        subscriptionId: recurringSubscription.id,
+        periodStart: currentPeriodEnd.toISOString(),
+        periodEnd: newPeriodEnd.toISOString(),
+      })
+    } else if ((recurringResult as RecurringRpcResult) === 'recovered') {
+      console.info('mollie_recurring_recovered', {
+        paymentId: payment.id,
+        subscriptionId: recurringSubscription.id,
+      })
+    } else if ((recurringResult as RecurringRpcResult) === 'past_due_set') {
+      console.info('mollie_recurring_past_due', {
+        paymentId: payment.id,
+        subscriptionId: recurringSubscription.id,
+      })
+    } else if ((recurringResult as RecurringRpcResult) === 'suspended') {
+      console.info('mollie_recurring_suspended', {
+        paymentId: payment.id,
+        subscriptionId: recurringSubscription.id,
+      })
+    } else if ((recurringResult as RecurringRpcResult) === 'already_processed') {
+      console.info('mollie_recurring_already_processed', {
+        paymentId: payment.id,
+        subscriptionId: recurringSubscription.id,
+      })
     }
 
     return NextResponse.json({ received: true }, { status: 200 })

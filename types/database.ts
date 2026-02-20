@@ -220,6 +220,7 @@ export type Database = {
           id: string
           mollie_payment_id: string
           plan_id: string
+          processed_at: string | null
           raw: Json | null
           sequence_type: string
           status: string
@@ -234,6 +235,7 @@ export type Database = {
           id?: string
           mollie_payment_id: string
           plan_id: string
+          processed_at?: string | null
           raw?: Json | null
           sequence_type: string
           status: string
@@ -248,6 +250,7 @@ export type Database = {
           id?: string
           mollie_payment_id?: string
           plan_id?: string
+          processed_at?: string | null
           raw?: Json | null
           sequence_type?: string
           status?: string
@@ -288,7 +291,9 @@ export type Database = {
           id: string
           mollie_customer_id: string | null
           mollie_subscription_id: string | null
+          past_due_since: string | null
           plan_id: string
+          suspended_at: string | null
           status: string
           updated_at: string
         }
@@ -301,7 +306,9 @@ export type Database = {
           id?: string
           mollie_customer_id?: string | null
           mollie_subscription_id?: string | null
+          past_due_since?: string | null
           plan_id: string
+          suspended_at?: string | null
           status: string
           updated_at?: string
         }
@@ -314,7 +321,9 @@ export type Database = {
           id?: string
           mollie_customer_id?: string | null
           mollie_subscription_id?: string | null
+          past_due_since?: string | null
           plan_id?: string
+          suspended_at?: string | null
           status?: string
           updated_at?: string
         }
@@ -340,6 +349,18 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      apply_recurring_payment: {
+        Args: {
+          p_company_id: string
+          p_now: string
+          p_payment_id: string
+          p_payment_status: string
+          p_period_end: string
+          p_period_start: string
+          p_subscription_id: string
+        }
+        Returns: string
+      }
       activate_subscription_after_first_payment: {
         Args: {
           p_company_id: string
