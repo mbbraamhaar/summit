@@ -17,7 +17,6 @@ import { Label } from '@/components/ui/label'
 import { type Json } from '@/types/database'
 
 export type SubscriptionFlowStep = 'plan' | 'billing' | 'payment'
-export type SubscriptionFlowInterval = 'monthly' | 'yearly'
 
 type SignupState = Extract<Awaited<ReturnType<typeof getSubscriptionSignupState>>, { success: true }>['state']
 
@@ -28,6 +27,16 @@ type BillingFormState = {
   country: string
   tax_id: string
   company_registration_id: string
+}
+
+type CheckoutStartResponse = {
+  checkoutUrl?: string
+  molliePaymentId?: string
+  subscriptionId?: string
+  error?: {
+    code?: string
+    message?: string
+  }
 }
 
 const EMPTY_BILLING_FORM: BillingFormState = {
@@ -120,6 +129,19 @@ function getPlanFeatures(features: Json | null | undefined) {
   return [String(features)]
 }
 
+async function startCheckout(planId: string) {
+  const response = await fetch('/api/billing/checkout/start', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ planId }),
+  })
+
+  const payload = (await response.json().catch(() => null)) as CheckoutStartResponse | null
+  return { response, payload }
+}
+
 function hydrateBillingForm(state: SignupState): BillingFormState {
   return {
     street_address: state.company.street_address ?? '',
@@ -132,8 +154,8 @@ function hydrateBillingForm(state: SignupState): BillingFormState {
 }
 
 function getPlanSelectionFromState(state: SignupState) {
-  const monthlyPlan = state.plans.find((plan) => plan.interval === 'month') ?? null
-  const yearlyPlan = state.plans.find((plan) => plan.interval === 'year') ?? null
+  const monthlyPlan = state.plan_options.monthly
+  const yearlyPlan = state.plan_options.yearly
 
   const yearlyPerMonth = yearlyPlan ? yearlyPlan.price / 12 : null
   const savingsPct = monthlyPlan && yearlyPlan
@@ -151,21 +173,25 @@ function getPlanSelectionFromState(state: SignupState) {
 interface SubscriptionSignupFlowProps {
   isOwner: boolean
   step: SubscriptionFlowStep
-  initialInterval: SubscriptionFlowInterval
+  selectedPlanId: string | null
+  checkoutStatus: 'processing' | null
 }
 
 export function SubscriptionSignupFlow({
   isOwner,
   step,
-  initialInterval,
+  selectedPlanId,
+  checkoutStatus,
 }: SubscriptionSignupFlowProps) {
   const router = useRouter()
   const [signupState, setSignupState] = useState<SignupState | null>(null)
   const [billingForm, setBillingForm] = useState<BillingFormState>(EMPTY_BILLING_FORM)
   const [isLoading, setIsLoading] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [isCreatingCheckout, setIsCreatingCheckout] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [formError, setFormError] = useState<string | null>(null)
+  const [checkoutError, setCheckoutError] = useState<string | null>(null)
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
 
   useEffect(() => {
@@ -177,7 +203,9 @@ export function SubscriptionSignupFlow({
     const load = async () => {
       setIsLoading(true)
       setLoadError(null)
-      const result = await getSubscriptionSignupState()
+      const result = await getSubscriptionSignupState({
+        plan_id: selectedPlanId ?? undefined,
+      })
       if (!active) {
         return
       }
@@ -196,7 +224,7 @@ export function SubscriptionSignupFlow({
     return () => {
       active = false
     }
-  }, [isOwner])
+  }, [isOwner, selectedPlanId])
 
   const planData = useMemo(() => {
     if (!signupState) {
@@ -211,13 +239,24 @@ export function SubscriptionSignupFlow({
     return getPlanSelectionFromState(signupState)
   }, [signupState])
 
-  const selectedPlan = initialInterval === 'yearly' ? planData.yearlyPlan : planData.monthlyPlan
+  const selectedPlan = signupState?.selected_plan ?? null
   const taxIdentityMode = getTaxIdentityMode(billingForm.country)
 
-  const navigateTo = (nextStep: SubscriptionFlowStep, interval = initialInterval) => {
+  const navigateTo = (
+    nextStep: SubscriptionFlowStep,
+    planId?: string | null,
+    options?: { preserveCheckoutError?: boolean },
+  ) => {
+    if (!options?.preserveCheckoutError) {
+      setCheckoutError(null)
+    }
+
+    const nextPlanId = planId ?? selectedPlan?.id ?? selectedPlanId ?? null
     const params = new URLSearchParams()
     params.set('tab', 'subscription')
-    params.set('interval', interval)
+    if (nextPlanId) {
+      params.set('plan_id', nextPlanId)
+    }
     if (nextStep !== 'plan') {
       params.set('step', nextStep)
     }
@@ -257,8 +296,21 @@ export function SubscriptionSignupFlow({
     return null
   }
 
+  const selectedPlanIntervalLabel = selectedPlan
+    ? selectedPlan.interval === 'year'
+      ? 'yearly'
+      : 'monthly'
+    : 'N/A'
+  const requiresPlanSelection = (step === 'billing' || step === 'payment') && !selectedPlan
+
   return (
     <div className="space-y-6">
+      {checkoutError && (
+        <Alert>
+          <AlertDescription>{checkoutError}</AlertDescription>
+        </Alert>
+      )}
+
       {step === 'plan' && (
         <Card>
           <CardHeader>
@@ -280,7 +332,7 @@ export function SubscriptionSignupFlow({
                   type="button"
                   className="mt-4"
                   disabled={!planData.monthlyPlan}
-                  onClick={() => navigateTo('billing', 'monthly')}
+                  onClick={() => navigateTo('billing', planData.monthlyPlan?.id)}
                 >
                   Select monthly
                 </Button>
@@ -309,7 +361,7 @@ export function SubscriptionSignupFlow({
                   type="button"
                   className="mt-4"
                   disabled={!planData.yearlyPlan}
-                  onClick={() => navigateTo('billing', 'yearly')}
+                  onClick={() => navigateTo('billing', planData.yearlyPlan?.id)}
                 >
                   Select yearly
                 </Button>
@@ -332,15 +384,31 @@ export function SubscriptionSignupFlow({
             <CardDescription>Complete company billing identity details.</CardDescription>
           </CardHeader>
           <CardContent>
+            {requiresPlanSelection && (
+              <Alert className="mb-4">
+                <AlertDescription>Select a plan first to continue.</AlertDescription>
+              </Alert>
+            )}
+
             <form
               className="space-y-4"
               onSubmit={async (event) => {
                 event.preventDefault()
+
+                if (!selectedPlan) {
+                  setFormError('Select a plan first to continue.')
+                  return
+                }
+
                 setIsSubmitting(true)
                 setFormError(null)
                 setFieldErrors({})
+                setCheckoutError(null)
 
-                const result = await updateCompanyForSubscriptionSignup(billingForm)
+                const result = await updateCompanyForSubscriptionSignup({
+                  ...billingForm,
+                  plan_id: selectedPlan.id,
+                })
                 setIsSubmitting(false)
 
                 if (!result.success) {
@@ -440,7 +508,7 @@ export function SubscriptionSignupFlow({
                 <Button type="button" variant="outline" onClick={() => navigateTo('plan')} disabled={isSubmitting}>
                   Back
                 </Button>
-                <Button type="submit" disabled={isSubmitting}>
+                <Button type="submit" disabled={isSubmitting || !selectedPlan}>
                   {isSubmitting ? 'Saving...' : 'Continue'}
                 </Button>
               </div>
@@ -458,9 +526,23 @@ export function SubscriptionSignupFlow({
           <CardContent className="space-y-4">
             <div className="space-y-1 text-sm">
               <p><span className="font-medium">Plan:</span> {selectedPlan?.name ?? 'N/A'}</p>
-              <p><span className="font-medium">Interval:</span> {initialInterval}</p>
+              <p><span className="font-medium">Interval:</span> {selectedPlanIntervalLabel}</p>
               <p><span className="font-medium">Price:</span> {formatEuroAmount(selectedPlan?.price)}</p>
             </div>
+
+            {requiresPlanSelection && (
+              <Alert>
+                <AlertDescription>Select a plan first to continue.</AlertDescription>
+              </Alert>
+            )}
+
+            {checkoutStatus === 'processing' && (
+              <Alert>
+                <AlertDescription>
+                  Processing payment... Activation may take a moment while we receive confirmation.
+                </AlertDescription>
+              </Alert>
+            )}
 
             <div className="space-y-1 text-sm">
               <p><span className="font-medium">Street address:</span> {signupState.company.street_address ?? 'N/A'}</p>
@@ -474,8 +556,45 @@ export function SubscriptionSignupFlow({
               </p>
             </div>
 
-            <Button type="button" disabled>
-              Proceed to Mollie checkout (Not implemented yet)
+            <Button
+              type="button"
+              disabled={isCreatingCheckout || !selectedPlan}
+              onClick={async () => {
+                if (!selectedPlan) {
+                  setCheckoutError('Select a plan first to continue.')
+                  navigateTo('plan', null, { preserveCheckoutError: true })
+                  return
+                }
+
+                setCheckoutError(null)
+                setIsCreatingCheckout(true)
+
+                const { response, payload } = await startCheckout(selectedPlan.id)
+
+                setIsCreatingCheckout(false)
+
+                if (!response.ok) {
+                  const message = payload?.error?.message ?? 'Failed to start checkout.'
+                  const code = payload?.error?.code
+                  setCheckoutError(message)
+
+                  if (code === 'INVALID_PLAN') {
+                    navigateTo('plan', null, { preserveCheckoutError: true })
+                    return
+                  }
+
+                  return
+                }
+
+                if (!payload?.checkoutUrl) {
+                  setCheckoutError('Checkout response was invalid.')
+                  return
+                }
+
+                window.location.assign(payload.checkoutUrl)
+              }}
+            >
+              {isCreatingCheckout ? 'Starting checkout...' : 'Proceed to Mollie checkout'}
             </Button>
 
             <div>
@@ -489,4 +608,3 @@ export function SubscriptionSignupFlow({
     </div>
   )
 }
-

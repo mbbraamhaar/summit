@@ -9,7 +9,7 @@ It intentionally avoids low-level API implementation details.
 ## Canonical Rules
 
 - Subscription behavior target is set-and-forget for normal renewals.
-- Canonical flow: select plan -> create customer -> create subscription -> process webhooks -> project entitlement to `companies.status`.
+- Canonical flow: select plan -> create/reuse customer -> create first payment (charged immediately) -> process webhook -> create recurring subscription starting next period -> project entitlement to `companies.status`.
 - Webhooks are authoritative for payment/subscription state transitions.
 - Return URLs are non-authoritative and used for UX navigation only.
 - Webhook processing must be idempotent to prevent double-processing.
@@ -19,11 +19,11 @@ It intentionally avoids low-level API implementation details.
 
 1. User selects plan (monthly or yearly).
 2. System creates or reuses Mollie customer for company.
-3. System creates Mollie subscription and checkout/payment context.
-4. User may return via return URL.
-5. Webhook events are processed and persisted.
-6. System updates subscription lifecycle fields.
-7. System updates `companies.status` for entitlement gating.
+3. System creates Mollie first payment checkout (`sequenceType=first`) and charges immediately.
+4. User may return via return URL (UX-only).
+5. Webhook confirms payment result (authoritative).
+6. On first payment `paid`, system creates Mollie recurring subscription with `startDate = current_period_end` (next period start).
+7. System updates `subscriptions` lifecycle fields and projects entitlement to `companies.status`.
 
 ## Set-and-Forget Expectations
 
@@ -56,6 +56,7 @@ See `docs/database-schema.md` for canonical schema details.
 
 Primary dependencies:
 - `subscriptions`: `mollie_customer_id`, `mollie_subscription_id`, `status`, period fields, `cancel_at_period_end`
+- `subscription_payment_attempts`: payment status timeline and idempotency key (`mollie_payment_id`)
 - `companies`: `status` (entitlement gate)
 - `plans`: selected plan and billing interval
 

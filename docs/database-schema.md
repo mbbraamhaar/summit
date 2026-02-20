@@ -1,6 +1,6 @@
 # Summit - Database Schema
 
-**Last Updated:** February 18, 2026  
+**Last Updated:** February 20, 2026  
 **Database:** PostgreSQL (Supabase)  
 **Security:** RLS enabled on all application tables
 
@@ -39,6 +39,7 @@ Allowed values:
 
 ### `subscriptions.status`
 Allowed values:
+- `pending`
 - `active`
 - `canceled`
 - `past_due`
@@ -168,11 +169,38 @@ Key columns:
 Constraints:
 - unique `company_id` (one subscription per company)
 - unique `mollie_subscription_id`
-- status check constraint (`active|canceled|past_due|suspended`)
+- status check constraint (`pending|active|canceled|past_due|suspended`)
 
 RLS policies:
 - `Users can view their company subscription` (`SELECT`)
 - `Owners can manage subscriptions` (`ALL`, owner-only)
+
+### `subscription_payment_attempts`
+Provider payment-attempt audit + idempotency table for subscription billing.
+
+Key columns:
+- `id uuid primary key`
+- `company_id uuid not null references companies(id) on delete cascade`
+- `subscription_id uuid references subscriptions(id) on delete set null`
+- `plan_id uuid not null references plans(id) on delete restrict`
+- `mollie_payment_id text not null unique`
+- `sequence_type text not null` (`first|recurring`)
+- `status text not null` (raw Mollie payment status)
+- `amount numeric(10,2) not null`
+- `currency text not null default 'EUR'`
+- `raw jsonb`
+- `created_at timestamptz not null`
+- `updated_at timestamptz not null`
+
+Constraints and indexes:
+- unique `mollie_payment_id`
+- sequence type check constraint (`first|recurring`)
+- index on `(company_id, created_at desc)`
+
+RLS policies:
+- `Users can view company subscription payment attempts` (`SELECT`, company-scoped)
+- `Owners can insert subscription payment attempts` (`INSERT`, owner-only)
+- `Owners can update subscription payment attempts` (`UPDATE`, owner-only)
 
 ## Database Functions
 
@@ -220,6 +248,7 @@ Generic timestamp-maintenance trigger function.
 - `update_workspaces_updated_at` on `companies` (legacy trigger name, active on `companies`)
 - `update_invitations_updated_at` on `invitations`
 - `update_subscriptions_updated_at` on `subscriptions`
+- `update_subscription_payment_attempts_updated_at` on `subscription_payment_attempts`
 
 All execute `update_updated_at_column()` before row update.
 
@@ -236,6 +265,9 @@ All execute `update_updated_at_column()` before row update.
 - `profiles (N:1) companies`
 - `companies (1:1 optional) subscriptions`
 - `subscriptions (N:1) plans`
+- `subscription_payment_attempts (N:1) companies`
+- `subscription_payment_attempts (N:1 optional) subscriptions`
+- `subscription_payment_attempts (N:1) plans`
 - `companies (1:N) invitations`
 
 ## Notes
